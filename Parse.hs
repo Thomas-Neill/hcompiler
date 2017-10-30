@@ -25,7 +25,9 @@ var = Var <$> many1 varChar
 typ = choice [
     string "int" *> pure HInt,
     string "float" *> pure HFloat,
-    string "bool" *> pure HBool
+    string "bool" *> pure HBool,
+    Func <$> (char '(' *> spaces *> char '[' *> typ `sepBy` (pad $ char ',')) <*>
+             (spaces *> char ']' *> spaces *> string "->" *> spaces *> typ <* spaces <* char ')')
   ]
 
 primary = pad $ choice [
@@ -62,7 +64,8 @@ decl = pad $ choice [
     FuncDef <$>
       (many1 varChar) <*>
       (spaces *> char '[' *> ((,) <$> (pad $ many1 varChar) <*> (char ':' *> pad typ)) `sepBy` char ',') <*>
-      (char ']' *> spaces *> char '=' *> spaces *> expr)
+      (char ']' *> spaces *> string "->" *> spaces *> typ) <*>
+      (spaces *> char '=' *> spaces *> expr)
   ]
 
 

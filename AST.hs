@@ -1,7 +1,7 @@
 module AST where
 import Data.Maybe
 
-data Type = HInt | HFloat | HBool deriving (Show,Eq)
+data Type = HInt | HFloat | HBool | Func [Type] Type deriving (Show,Eq)
 
 isNum HInt = True
 isNum HFloat = True
@@ -14,11 +14,9 @@ data Expr = ILit Integer |
             If Expr Expr Expr |
             Var String |
             TypedVar Type String |
-            Let [(String,Expr)] Expr deriving Show
+            Let [(String,Expr)] Expr | deriving Show
 
 data BinOp = Add | Sub | Mul | Div | Equal | Inequal | Greater | Less deriving (Show,Eq)
-
-data Declaration = FuncDef String [(String,Type)] Expr deriving Show
 
 isComp Equal = True
 isComp Inequal = True
@@ -69,7 +67,20 @@ typeOf (If c l r) =
         lt
 typeOf (Let es e) = (foldl1 seq $ fmap (typeOf . snd) es) `seq` typeOf e
 typeOf (TypedVar t _) = t
+typeOf (Var ow) = error $ "Ooops, var " ++ ow ++ " not named properly."
 
 binResult HFloat _ = HFloat
 binResult _ HFloat = HFloat
 binResult HInt HInt = HInt
+
+data Declaration = FuncDef String [(String,Type)] Type Expr deriving Show
+
+typeofDecl :: Declaration -> (String,Type)
+typeofDecl (FuncDef name tys ret result) =
+  if typeOf result /= ret then
+    error "Wrong return type!"
+  else
+    (name, Func (map snd tys) ret)
+
+getDefns :: [Declaration] -> [(String,Type)]
+getDefns = map typeofDecl

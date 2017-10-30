@@ -25,7 +25,8 @@ import qualified Data.ByteString.Char8 as BS
 data CompilerState =
   CompilerState {
     workingMod :: Module,
-    nameCounter :: Int
+    nameCounter :: Int,
+    globals :: [(String,Operand)]
   }
 
 data FnState =
@@ -62,6 +63,7 @@ genCompilerState modName sourceName =
   CompilerState
     (defaultModule {moduleName = tosbs modName, moduleSourceFileName = tosbs sourceName})
     0
+    []
 
 defaultBlockState = BlockState [] (error "Missing terminator")
 
@@ -77,6 +79,9 @@ addGlobal d = do
   wmod <- gets workingMod
   modify $ \st -> st {workingMod = wmod {moduleDefinitions = moduleDefinitions wmod ++ [d]} }
 
+defineGlobal :: (String,Operand) -> LLVMM ()
+defineGlobal what = modify $ \st -> st {globals = what:globals st}
+
 genFunction :: Type -> Name -> [(Type,Name)] -> Global
 genFunction returnt nm params =
   functionDefaults {
@@ -85,9 +90,6 @@ genFunction returnt nm params =
     parameters = (params',False)}
   where
     params' = map (\(t,n) -> Parameter t n []) params
-
-llmain :: Global
-llmain = genFunction llint (mkName "main") []
 
 runCodegen :: Global -> Codegen () -> LLVMM ()
 runCodegen def cdg = do
@@ -252,12 +254,16 @@ exprCodegen (H.Binary op l r) = do
         else
           error "What?"
 
+declareGlobals :: [(String,H.Type)] -> LLVMM ()
+declareGlobals decls = mapM_ defineGlobal [(name,ConstantOperand (C.GlobalReference (htoll ty) (strtoname name))) | (name,ty) <- decls]
+
 declCodegen :: H.Declaration -> LLVMM ()
-declCodegen (H.FuncDef name args expr) = do
-    let glb = genFunction (htoll $ H.typeOf expr) (strtoname name) [(htoll ty,strtoname name) | (name,ty) <- args]
+declCodegen (H.FuncDef name args retu expr) = do
+    let glb = genFunction (htoll retu) (strtoname name) [(htoll ty,strtoname name) | (name,ty) <- args]
+    globs <- gets globals
     runCodegen glb (
       do
-        pushScope $ [(name,local $ strtoname name) | (name,ty) <- args]
+        pushScope $ globs ++ [(name,local $ strtoname name) | (name,ty) <- args]
         new <- newBlock
         useBlock new
         result <- exprCodegen expr
@@ -276,4 +282,5 @@ cast x y o = if x == y then return o else error "Not Implemented"
 htoll :: H.Type -> Type
 htoll H.HBool = llbool
 htoll H.HInt = llint
-htol H.HFloat = llfloat
+htoll H.HFloat = llfloat
+htoll (H.Func args retty) = FunctionType (htoll retty) (map htoll args) False --not variadic

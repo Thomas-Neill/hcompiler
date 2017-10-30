@@ -15,5 +15,7 @@ main = do
       ast = runPasses ast''
   print ast
   compile (workingMod $ execState
-    (mapM_ declCodegen ast)
+    (do
+      declareGlobals $ getDefns ast
+      mapM_ declCodegen ast)
     (genCompilerState "???" "stdin")) "out.ll"
