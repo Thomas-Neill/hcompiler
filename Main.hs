@@ -1,4 +1,5 @@
 import LLVMM
+import Codegen
 import Parse
 import Emit
 import Control.Monad.State
@@ -6,9 +7,13 @@ import LLVM.AST
 import AST
 import Data.Maybe
 import Passes
+import System.Environment
 
 main = do
-  line <- getLine
+  args <- getArgs
+  line <- case args of
+    [] -> getLine
+    [fname] -> readFile fname
   let ast' = parsed line
   print ast'
   let (Right ast'') = ast'

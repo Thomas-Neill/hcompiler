@@ -8,12 +8,11 @@ import LLVM.AST.Global
 import LLVM.AST.Instruction
 import LLVM.AST.Operand
 
-import qualified LLVM.AST.IntegerPredicate as I
+import qualified LLVM.AST.CallingConvention as CC
 import qualified LLVM.AST.Constant as C
 import qualified LLVM.AST.Linkage as L
 import qualified LLVM.AST.Type as T
 import qualified LLVM.AST.Float as F
-import qualified LLVM.AST.FloatingPointPredicate as FP
 
 import Control.Monad.State
 
@@ -166,6 +165,8 @@ fdiv = mkfBinary FDiv
 floattoint x = ins $ FPToSI x llint []
 inttofloat x = ins $ SIToFP x llfloat []
 booltoint x = ins $ ZExt x llint []
+call f args = ins $
+  Call Nothing CC.C [] (Right f) [(x,[]) | x <- args] [] []
 
 phi tp branches = ins $ Phi tp branches []
 
@@ -173,106 +174,6 @@ br lbl = addTerm $ Br lbl []
 cbr b t f = addTerm $ CondBr b t f []
 ret val = addTerm $ Ret (Just val) []
 
---actual codegen
-exprCodegen :: H.Expr -> Codegen Operand
-exprCodegen (H.ILit i) = return $ constint i
-exprCodegen (H.FLit f) = return $ constf f
-exprCodegen (H.BLit b) = return $ constb b
-exprCodegen (H.TypedVar _ v) = find v
-exprCodegen whole@(H.If c t e) = do
-  let rt = H.typeOf whole --resulting type
-
-  then' <- newBlock
-  else' <- newBlock
-  done <- newBlock
-
-  c' <- exprCodegen c
-  cbr c' then' else'
-
-  useBlock then'
-  t' <- exprCodegen t
-  thenblk <- gets currentBlock
-  br done
-
-  useBlock else'
-  e' <- exprCodegen e
-  elseblk <- gets currentBlock
-  br done
-
-  useBlock done
-  phi (htoll rt) [(t',thenblk),(e',elseblk)]
-
-exprCodegen (H.Let es e) = do
-  os <- mapM (\(name,expr) -> do
-    o <- exprCodegen expr
-    return (name,o)) es
-  pushScope os
-  e' <- exprCodegen e
-  popScope
-  return e'
-
-exprCodegen (H.Binary op l r) = do
-  l' <- exprCodegen l
-  r' <- exprCodegen r
-  if op == H.Div then do
-    l'' <- cast (H.typeOf l) H.HFloat l'
-    r'' <- cast (H.typeOf r) H.HFloat r'
-    fdiv l'' r''
-  else let
-    lt = H.typeOf l
-    rt = H.typeOf r
-    in if H.isMath op then do
-          let castType = lt `H.binResult` rt
-          l'' <- cast lt castType l'
-          r'' <- cast rt castType r'
-          if castType == H.HInt then
-            case op of
-              H.Add -> iadd l'' r''
-              H.Sub -> isub l'' r''
-              H.Mul -> imul l'' r''
-          else
-            case op of
-              H.Add -> fadd l'' r''
-              H.Sub -> fsub l'' r''
-              H.Mul -> fmul l'' r''
-      else if H.isComp op then
-            if lt == rt then
-              if lt == H.HInt || lt == H.HBool then
-                icmp (case op of
-                  H.Equal -> I.EQ
-                  H.Inequal -> I.NE
-                  H.Greater -> I.SGT
-                  H.Less -> I.SLT) l' r'
-              else
-                fcmp (case op of
-                  H.Equal -> FP.OEQ
-                  H.Inequal -> FP.ONE
-                  H.Greater -> FP.OGT
-                  H.Less -> FP.OLT) l' r'
-          else
-            error "Can't compare different types"
-        else
-          error "What?"
-
-declareGlobals :: [(String,H.Type)] -> LLVMM ()
-declareGlobals decls = mapM_ defineGlobal [(name,ConstantOperand (C.GlobalReference (htoll ty) (strtoname name))) | (name,ty) <- decls]
-
-declCodegen :: H.Declaration -> LLVMM ()
-declCodegen (H.FuncDef name args retu expr) = do
-    let glb = genFunction (htoll retu) (strtoname name) [(htoll ty,strtoname name) | (name,ty) <- args]
-    globs <- gets globals
-    runCodegen glb (
-      do
-        pushScope $ globs ++ [(name,local $ strtoname name) | (name,ty) <- args]
-        new <- newBlock
-        useBlock new
-        result <- exprCodegen expr
-        ret result)
-
-
---typey operations
-
---     from       to      input      casted output
 cast :: H.Type -> H.Type -> Operand -> Codegen Operand
 cast H.HFloat H.HInt op = floattoint op
 cast H.HInt H.HFloat op = inttofloat op
@@ -283,4 +184,4 @@ htoll :: H.Type -> Type
 htoll H.HBool = llbool
 htoll H.HInt = llint
 htoll H.HFloat = llfloat
-htoll (H.Func args retty) = FunctionType (htoll retty) (map htoll args) False --not variadic
+htoll (H.Func args retty) = FunctionType (htoll retty) (map htoll args) False

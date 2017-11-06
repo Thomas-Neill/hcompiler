@@ -38,6 +38,19 @@ primary = pad $ choice [
     char '(' *> expr <* char ')'
   ]
 
+if' = If <$> (try (string "if") *> spaces *> char '[' *> expr) <*>
+             (char ']' *> spaces *> string "then" *> spaces *> char '[' *> expr) <*>
+             (char ']' *> spaces *> string "else" *> spaces *> char '[' *> expr <* char ']')
+
+let' = Let <$> (try (string "let") *> spaces *> char '[' *> assignment `sepBy` char ',') <*>
+               (spaces *> char ']' *> spaces *> string "in" *> spaces *> char '[' *> expr <* char ']')
+    where
+      assignment = (,) <$> (spaces *> many1 varChar <* spaces <* char '=') <*> expr
+
+call = Call <$> primary <*> (spaces *> try (char '[') *> spaces *> expr `sepBy` (pad $ char ',') <* char ']')
+
+special = pad $ choice [if',let',try call,primary]
+
 mkBinLevel :: Parser Expr -> [(String,BinOp)] -> Parser Expr
 mkBinLevel prev opmap = prev `chainl1` op
   where
@@ -45,20 +58,11 @@ mkBinLevel prev opmap = prev `chainl1` op
       str <- choice $ fmap (string . fst) opmap
       return . Binary . fromJust $ lookup str opmap
 
-factor = mkBinLevel primary [("*",Mul),("/",Div)]
+factor = mkBinLevel special [("*",Mul),("/",Div)]
 addition = mkBinLevel factor [("+",Add),("-",Sub)]
 comparison = mkBinLevel addition [("==",Equal),("/=",Inequal),(">",Greater),("<",Less)]
 
-if' = If <$> (try (string "if") *> spaces *> char '[' *> expr) <*>
-             (char ']' *> spaces *> string "then" *> spaces *> char '[' *> expr) <*>
-             (char ']' *> spaces *> string "else" *> spaces *> char '[' *> expr <* char ']')
-
-let' = Let <$> (try (string "let") *> spaces *> char '[' *> assignment `sepBy` char ',') <*>
-               (spaces *> char ']' *> spaces *> string "in" *> spaces *> char '[' *> expr <* char ']')
-  where
-    assignment = (,) <$> (spaces *> many1 varChar <* spaces <* char '=') <*> expr
-
-expr = choice [if',let',comparison]
+expr = comparison
 
 decl = pad $ choice [
     FuncDef <$>

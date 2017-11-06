@@ -14,7 +14,8 @@ data Expr = ILit Integer |
             If Expr Expr Expr |
             Var String |
             TypedVar Type String |
-            Let [(String,Expr)] Expr | deriving Show
+            Let [(String,Expr)] Expr |
+            Call Expr [Expr] deriving Show
 
 data BinOp = Add | Sub | Mul | Div | Equal | Inequal | Greater | Less deriving (Show,Eq)
 
@@ -67,7 +68,16 @@ typeOf (If c l r) =
         lt
 typeOf (Let es e) = (foldl1 seq $ fmap (typeOf . snd) es) `seq` typeOf e
 typeOf (TypedVar t _) = t
-typeOf (Var ow) = error $ "Ooops, var " ++ ow ++ " not named properly."
+typeOf (Call f args) =
+  let
+    tf = typeOf f
+    ta = map typeOf args
+  in
+    case tf of
+      (Func tys ret) -> if tys /= ta then error "Incorrect args." else ret
+      _ -> error "You can only call a function!"
+
+typeOf (Var ow) = error $ "Variable " ++ ow ++ " undeclared"
 
 binResult HFloat _ = HFloat
 binResult _ HFloat = HFloat
@@ -76,11 +86,12 @@ binResult HInt HInt = HInt
 data Declaration = FuncDef String [(String,Type)] Type Expr deriving Show
 
 typeofDecl :: Declaration -> (String,Type)
-typeofDecl (FuncDef name tys ret result) =
-  if typeOf result /= ret then
-    error "Wrong return type!"
-  else
-    (name, Func (map snd tys) ret)
+typeofDecl (FuncDef name tys ret result) = (name, Func (map snd tys) ret)
 
 getDefns :: [Declaration] -> [(String,Type)]
 getDefns = map typeofDecl
+
+validate :: [Declaration] -> [Declaration]
+validate decls = (foldl1 seq $ map val decls) `seq` decls
+  where
+    val (FuncDef _ _ ret result) = if ret == typeOf result then 0 else error "Function return type =/= actual return type"
