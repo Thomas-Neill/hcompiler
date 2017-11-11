@@ -17,12 +17,14 @@ data Expr = ILit Integer |
             Let [(String,Expr)] Expr |
             Call Expr [Expr] deriving Show
 
-data BinOp = Add | Sub | Mul | Div | Equal | Inequal | Greater | Less deriving (Show,Eq)
+data BinOp = Add | Sub | Mul | Div | Equal | Inequal | Greater | Less | GrEqual | LEqual deriving (Show,Eq)
 
 isComp Equal = True
 isComp Inequal = True
 isComp Greater = True
 isComp Less = True
+isComp GrEqual = True
+isComp LEqual = True
 isComp _ = False
 
 isMath = not . isComp
@@ -35,7 +37,7 @@ typeOf (Binary op l r) =
   let lt = typeOf l
       rt = typeOf r
       nnumerr = error "Expected both numeric types in math expression."
-      wrongtypes = error "Inequal types to compare"
+      wrongtypes = error "Different types to compare"
   in if op == Div then
       if not $ isNum lt && isNum rt then
         nnumerr

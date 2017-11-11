@@ -82,13 +82,17 @@ exprCodegen (H.Binary op l r) = do --jesus this is bad
                   H.Equal -> I.EQ
                   H.Inequal -> I.NE
                   H.Greater -> I.SGT
-                  H.Less -> I.SLT) l' r'
+                  H.Less -> I.SLT
+                  H.GrEqual -> I.SGE
+                  H.LEqual -> I.SLE) l' r'
               else
                 fcmp (case op of
                   H.Equal -> FP.OEQ
                   H.Inequal -> FP.ONE
                   H.Greater -> FP.OGT
-                  H.Less -> FP.OLT) l' r'
+                  H.Less -> FP.OLT
+                  H.GrEqual -> FP.OGE
+                  H.LEqual -> FP.OLE) l' r'
           else
             error "Can't compare different types"
         else

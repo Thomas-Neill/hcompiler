@@ -51,16 +51,16 @@ call = Call <$> primary <*> (spaces *> try (char '[') *> spaces *> expr `sepBy` 
 
 special = pad $ choice [if',let',try call,primary]
 
-mkBinLevel :: Parser Expr -> [(String,BinOp)] -> Parser Expr
-mkBinLevel prev opmap = prev `chainl1` op
+mkBinLevel :: Parser Expr -> [(String,BinOp)] -> String -> Parser Expr
+mkBinLevel prev opmap descr = prev `chainl1` op
   where
-    op = do
-      str <- choice $ fmap (string . fst) opmap
-      return . Binary . fromJust $ lookup str opmap
+    op = (do
+      str <- choice $ fmap (try . string . fst) opmap
+      return . Binary . fromJust $ lookup str opmap) <?> descr
 
-factor = mkBinLevel special [("*",Mul),("/",Div)]
-addition = mkBinLevel factor [("+",Add),("-",Sub)]
-comparison = mkBinLevel addition [("==",Equal),("/=",Inequal),(">",Greater),("<",Less)]
+factor = mkBinLevel special [("*",Mul),("/",Div)] "* or /"
+addition = mkBinLevel factor [("+",Add),("-",Sub)] "+ or -"
+comparison = mkBinLevel addition [("==",Equal),("/=",Inequal),("<=",LEqual),(">=",GrEqual),(">",Greater),("<",Less)] "Comparison"
 
 expr = comparison
 
