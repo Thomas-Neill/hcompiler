@@ -1,6 +1,4 @@
 ; ModuleID = '???'
 source_filename = "stdin"
 
-define i1 @main() {
-  ret i1 true
-}
+declare float @sin(float)

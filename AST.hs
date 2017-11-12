@@ -85,10 +85,13 @@ binResult HFloat _ = HFloat
 binResult _ HFloat = HFloat
 binResult HInt HInt = HInt
 
-data Declaration = FuncDef String [(String,Type)] Type Expr deriving Show
+data Declaration =
+  FuncDef String [(String,Type)] Type Expr |
+  Extern String Type deriving Show
 
 typeofDecl :: Declaration -> (String,Type)
 typeofDecl (FuncDef name tys ret result) = (name, Func (map snd tys) ret)
+typeofDecl (Extern nm ty) = (nm,ty)
 
 getDefns :: [Declaration] -> [(String,Type)]
 getDefns = map typeofDecl
@@ -97,3 +100,4 @@ validate :: [Declaration] -> [Declaration]
 validate decls = (foldl1 seq $ map val decls) `seq` decls
   where
     val (FuncDef _ _ ret result) = if ret == typeOf result then 0 else error "Function return type =/= actual return type"
+    val (Extern _ _) = 0

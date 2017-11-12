@@ -4,6 +4,8 @@ import Text.ParserCombinators.Parsec
 import AST
 import Data.Maybe
 
+spaces1 = many1 space
+
 double :: Parser Expr
 double = FLit . read <$> ((++) <$> many1 digit <*> ((:) <$> char '.' <*> many1 digit))
 
@@ -65,6 +67,9 @@ comparison = mkBinLevel addition [("==",Equal),("/=",Inequal),("<=",LEqual),(">=
 expr = comparison
 
 decl = pad $ choice [
+    Extern <$>
+      (try (string "extern") *> spaces1 *> many1 varChar) <*>
+      (spaces *> char ':' *> spaces *> typ <* spaces),
     FuncDef <$>
       (many1 varChar) <*>
       (spaces *> char '[' *> ((,) <$> (pad $ many1 varChar) <*> (char ':' *> pad typ)) `sepBy` char ',') <*>

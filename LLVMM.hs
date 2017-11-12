@@ -4,7 +4,7 @@ import qualified AST as H
 import Util
 
 import LLVM.AST
-import LLVM.AST.Global
+import LLVM.AST.Global as G
 import LLVM.AST.Instruction
 import LLVM.AST.Operand
 
@@ -89,6 +89,14 @@ genFunction returnt nm params =
     parameters = (params',False)}
   where
     params' = map (\(t,n) -> Parameter t n []) params
+
+genExternVar :: Name -> Type -> Global
+genExternVar nm ty = globalVariableDefaults
+          {
+            linkage = L.External,
+            name = nm,
+            G.type' = ty
+          }
 
 runCodegen :: Global -> Codegen () -> LLVMM ()
 runCodegen def cdg = do

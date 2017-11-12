@@ -112,3 +112,8 @@ declCodegen (H.FuncDef name args retu expr) = do
         useBlock new
         result <- exprCodegen expr
         ret result)
+declCodegen (H.Extern name ty') = do
+  addGlobal $ GlobalDefinition  $ case ty' of
+    (H.Func tys ty) -> genFunction (htoll ty) (strtoname name)
+      (zipWith (,) (map htoll tys) (map (\x -> strtoname $ replicate x 'a') [1..]))
+    ty -> genExternVar (strtoname name) (htoll ty)

@@ -19,11 +19,13 @@ typeArgs decls = map typeArgs' decls
   where
     typeArgs' (FuncDef name types ret expr) =
       FuncDef name types ret $ typeVars [types] expr
+    typeArgs' (Extern nm ty) = Extern nm ty
 
 typeGlobals decls = map typeGlobals' decls
   where
     glbs = getDefns decls
     typeGlobals' (FuncDef name types ret expr) =
       FuncDef name types ret $ typeVars [glbs] expr
+    typeGlobals' (Extern nm ty) = Extern nm ty
 
 runPasses = validate . typeArgs . typeGlobals

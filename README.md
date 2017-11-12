@@ -2,8 +2,8 @@
 An incomplete functional programming language.
 See fibs.h for an working example.
 
-##TO-DO (sorted by difficulty):
-* Greater/lesser equals
+## TO-DO (sorted by difficulty):
+* --Greater/lesser equals--
 * External functions
 * String literals
 * Currying
