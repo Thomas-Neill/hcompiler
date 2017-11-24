@@ -1,7 +1,22 @@
 module AST where
 import Data.Maybe
+import Util (commonArgs)
+import Data.List
 
-data Type = HInt | HFloat | HBool | Func [Type] Type deriving (Show,Eq)
+data Type = HInt | HFloat | HBool | Func [Type] Type | Curry [Type] Type Int deriving (Show)
+
+instance Eq Type where
+  HInt == HInt = True
+  HFloat == HFloat = True
+  HBool == HBool = True
+  Func args ret == Func args1 ret1 = args == args1 && ret == ret1
+  (Curry args ret applied) == Func args1 ret1 =
+    ret == ret1 && (drop applied args) == args1
+  f@(Func _ _) == c@(Curry _ _ _) = c == f
+  (Curry args ret applied) == (Curry args1 ret1 applied1) =
+    args == args1 && ret == ret1 && applied == applied1
+  _ == _ = False
+
 
 isNum HInt = True
 isNum HFloat = True
@@ -76,9 +91,22 @@ typeOf (Call f args) =
     ta = map typeOf args
   in
     case tf of
-      (Func tys ret) -> if tys /= ta then error "Incorrect args." else ret
+      (Func args ret) ->
+        if args /= ta then
+          if length args > length ta then
+            Curry args ret (commonArgs ta args)
+          else
+            error "More args than the function takes"
+        else ret
+      (Curry args ret applied) ->
+        if (drop applied args) /= ta then
+          if length args - applied > length ta then
+            Curry args ret (applied + commonArgs ta (drop applied args))
+          else
+            error "More args than the function takes"
+        else
+          ret
       _ -> error "You can only call a function!"
-
 typeOf (Var ow) = error $ "Variable " ++ ow ++ " undeclared"
 
 binResult HFloat _ = HFloat
@@ -87,17 +115,31 @@ binResult HInt HInt = HInt
 
 data Declaration =
   FuncDef String [(String,Type)] Type Expr |
-  Extern String Type deriving Show
+  Extern String Type
+
+instance Show Declaration where
+  show (FuncDef nm args ret bod) =
+    nm ++ "[" ++ intercalate " " (map (\(x,y) -> show x ++ ":" ++ show y) args) ++
+    "] -> " ++ show ret ++ " = " ++ show bod ++ ";"
+  show (Extern nm ty) = "extern " ++ nm ++ " : " ++ show ty ++ ";"
 
 typeofDecl :: Declaration -> (String,Type)
 typeofDecl (FuncDef name tys ret result) = (name, Func (map snd tys) ret)
 typeofDecl (Extern nm ty) = (nm,ty)
 
-getDefns :: [Declaration] -> [(String,Type)]
-getDefns = map typeofDecl
+typeofDeclAct :: Declaration -> (String,Type)
+typeofDeclAct (FuncDef name tys ret result) =
+  let actual = typeOf result
+  in
+    (if ret == actual then 0 else
+      error $ "Expected return of " ++ show ret ++ " , but got " ++ show actual)
+    `seq` (name,Func (map snd tys) actual)
+typeofDeclAct (Extern nm ty) = (nm,ty)
 
 validate :: [Declaration] -> [Declaration]
 validate decls = (foldl1 seq $ map val decls) `seq` decls
   where
-    val (FuncDef _ _ ret result) = if ret == typeOf result then 0 else error "Function return type =/= actual return type"
+    val (FuncDef _ _ ret result) =
+      if ret == typeOf result then 0 else
+        error $ "Expected return of " ++ show ret ++ " , but got " ++ show (typeOf result)
     val (Extern _ _) = 0

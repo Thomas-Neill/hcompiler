@@ -15,12 +15,12 @@ main = do
     [] -> getLine
     [fname] -> readFile fname
   let ast' = parsed line
-  print ast'
   let (Right ast'') = ast'
       ast = runPasses ast''
-  print ast
+  mapM print ast''
+  mapM print ast
   compile (workingMod $ execState
     (do
-      declareGlobals $ getDefns ast
+      declareGlobals $ map typeofDecl ast
       mapM_ declCodegen ast)
     (genCompilerState "???" "stdin")) "out.ll"

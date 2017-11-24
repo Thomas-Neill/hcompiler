@@ -12,7 +12,9 @@ import qualified LLVM.AST.CallingConvention as CC
 import qualified LLVM.AST.Constant as C
 import qualified LLVM.AST.Linkage as L
 import qualified LLVM.AST.Type as T
+import LLVM.AST.Type (i32,i1,float,i8)
 import qualified LLVM.AST.Float as F
+import qualified LLVM.AST.AddrSpace as AS
 
 import Control.Monad.State
 
@@ -50,9 +52,6 @@ tosbs = SBS.toShort . BS.pack
 strtoname = Name . tosbs
 
 --llvm types
-llint = T.IntegerType (fromIntegral 32)
-llbool = T.IntegerType (fromIntegral 1)
-llfloat = T.FloatingPointType T.FloatFP
 constint = ConstantOperand . C.Int (fromIntegral 32)
 constb b = ConstantOperand . C.Int (fromIntegral 1) $ if b then 1 else 0
 constf = ConstantOperand . C.Float . F.Single
@@ -146,7 +145,8 @@ addIns i = modifyCurrentBlock (\bst -> bst {instructions = instructions bst ++ [
 addTerm :: Terminator -> Codegen ()
 addTerm t = modifyCurrentBlock (\bst -> bst {terminator = Do t})
 
-local = LocalReference (error "WHAT?")
+local = LocalReference $
+  error "If you are reading this, the horrible hack you used to avoid typing the local references gave out."
 
 ins :: Instruction -> Codegen Operand
 ins instr = do
@@ -170,9 +170,29 @@ fsub = mkfBinary FSub
 fmul = mkfBinary FMul
 fdiv = mkfBinary FDiv
 
-floattoint x = ins $ FPToSI x llint []
-inttofloat x = ins $ SIToFP x llfloat []
-booltoint x = ins $ ZExt x llint []
+gep add indices = ins $ GetElementPtr False add indices []
+
+gep' add indices = gep add (map constint indices)
+
+malloc ty = do
+  sz <- gep' (ConstantOperand $ C.Null $ pointerto ty) [1]
+  size <- ins $ PtrToInt sz i32 []
+  ptr <- call (ConstantOperand $ C.GlobalReference mallocType (strtoname "malloc")) [size]
+  ins $ BitCast ptr (pointerto ty) []
+  where
+    mallocType = FunctionType (pointerto i8) [pointerto i8] False
+
+free ptr = do
+  ptr' <- ins $ BitCast ptr (pointerto i8) []
+  call (ConstantOperand $ C.GlobalReference freeType $ strtoname "free") [ptr']
+  where
+    freeType = FunctionType VoidType [pointerto i8] False
+load add = ins $ Load False add Nothing 0 []
+store add val = ins $ Store False add val Nothing 0 []
+
+floattoint x = ins $ FPToSI x i32 []
+inttofloat x = ins $ SIToFP x float []
+booltoint x = ins $ ZExt x i32 []
 call f args = ins $
   Call Nothing CC.C [] (Right f) [(x,[]) | x <- args] [] []
 
@@ -189,7 +209,20 @@ cast H.HBool H.HInt op = booltoint op
 cast x y o = if x == y then return o else error "Not Implemented"
 
 htoll :: H.Type -> Type
-htoll H.HBool = llbool
-htoll H.HInt = llint
-htoll H.HFloat = llfloat
-htoll (H.Func args retty) = FunctionType (htoll retty) (map htoll args) False
+htoll H.HBool = i1
+htoll H.HInt = i32
+htoll H.HFloat = float
+htoll (H.Func args rett) = FunctionType (htoll rett) (map htoll args) False
+htoll (H.Curry args rett applied) =
+  pointerto $
+    StructureType False $ (pointerto . htoll $ H.Func args rett):(map htoll $ take applied args)
+
+deref (PointerType ty _) = ty
+pointerto ty = PointerType ty (AS.AddrSpace 0)
+
+requiredDefns = do
+  let
+    mallocGlobal = (genFunction (pointerto i8) (strtoname "malloc") [(i32,strtoname "size")])
+    freeGlobal = (genFunction VoidType (strtoname "free") [(pointerto i8,strtoname "target")])
+  addGlobal $ GlobalDefinition mallocGlobal
+  addGlobal $ GlobalDefinition freeGlobal
