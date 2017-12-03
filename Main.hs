@@ -17,7 +17,7 @@ main = do
   let ast' = parsed line
   let (Right ast'') = ast'
       ast = runPasses ast''
-  mapM print ast''
+  --mapM print ast''
   mapM print ast
   compile (workingMod $ execState
     (do

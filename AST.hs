@@ -30,7 +30,8 @@ data Expr = ILit Integer |
             Var String |
             TypedVar Type String |
             Let [(String,Expr)] Expr |
-            Call Expr [Expr] deriving Show
+            Call Expr [Expr] |
+            Lambda [(String,Type)] Type Expr deriving Show
 
 data BinOp = Add | Sub | Mul | Div | Equal | Inequal | Greater | Less | GrEqual | LEqual deriving (Show,Eq)
 
@@ -107,7 +108,13 @@ typeOf (Call f args) =
         else
           ret
       _ -> error "You can only call a function!"
+typeOf (Lambda args rettype expr) =
+  if typeOf expr == rettype then
+    Func (map snd args) $ typeOf expr
+  else
+    error "Lambda return disagrees with actual return."
 typeOf (Var ow) = error $ "Variable " ++ ow ++ " undeclared"
+
 
 binResult HFloat _ = HFloat
 binResult _ HFloat = HFloat

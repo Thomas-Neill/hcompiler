@@ -4,9 +4,9 @@ See fibs.h for an working example.
 
 ## TO-DO (sorted by difficulty):
 * --Greater/lesser equals--
-* External functions
+* --External functions--
 * String literals
-* Currying
+* --Currying--
 * ADTs
 * Polymorphism
 

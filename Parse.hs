@@ -22,6 +22,8 @@ pad p = spaces *> p <* spaces
 
 varChar = oneOf "qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCCVBNM"
 
+argsTypes = char '[' *> (((,) <$> (pad $ many1 varChar) <*> (char ':' *> pad typ)) `sepBy` char ',') <* char ']'
+
 var = Var <$> many1 varChar
 
 typ = choice [
@@ -37,8 +39,15 @@ primary = pad $ choice [
     var,
     try double,
     int,
-    char '(' *> expr <* char ')'
+    char '(' *> expr <* char ')',
+    lambda
   ]
+
+lambda = Lambda <$>
+  (char '[' *> spaces *> string "lambda" *> spaces *> argsTypes) <*>
+  (spaces *> string "->" *> spaces *> typ) <*>
+  (spaces *> char '=' *> expr <* char ']')
+
 
 if' = If <$> (try (string "if") *> spaces *> char '[' *> expr) <*>
              (char ']' *> spaces *> string "then" *> spaces *> char '[' *> expr) <*>
@@ -53,16 +62,16 @@ call = Call <$> primary <*> (spaces *> try (char '[') *> spaces *> expr `sepBy` 
 
 special = pad $ choice [if',let',try call,primary]
 
-mkBinLevel :: Parser Expr -> [(String,BinOp)] -> String -> Parser Expr
-mkBinLevel prev opmap descr = prev `chainl1` op
+mkBinLevel :: Parser Expr -> [(String,BinOp)] -> Parser Expr
+mkBinLevel prev opmap = prev `chainl1` op
   where
     op = (do
       str <- choice $ fmap (try . string . fst) opmap
-      return . Binary . fromJust $ lookup str opmap) <?> descr
+      return . Binary . fromJust $ lookup str opmap)
 
-factor = mkBinLevel special [("*",Mul),("/",Div)] "* or /"
-addition = mkBinLevel factor [("+",Add),("-",Sub)] "+ or -"
-comparison = mkBinLevel addition [("==",Equal),("/=",Inequal),("<=",LEqual),(">=",GrEqual),(">",Greater),("<",Less)] "Comparison"
+factor = mkBinLevel special [("*",Mul),("/",Div)]
+addition = mkBinLevel factor [("+",Add),("-",Sub)]
+comparison = mkBinLevel addition [("==",Equal),("/=",Inequal),("<=",LEqual),(">=",GrEqual),(">",Greater),("<",Less)]
 
 expr = comparison
 
@@ -72,8 +81,8 @@ decl = pad $ choice [
       (spaces *> char ':' *> spaces *> typ <* spaces),
     FuncDef <$>
       (many1 varChar) <*>
-      (spaces *> char '[' *> ((,) <$> (pad $ many1 varChar) <*> (char ':' *> pad typ)) `sepBy` char ',') <*>
-      (char ']' *> spaces *> string "->" *> spaces *> typ) <*>
+      (spaces *> argsTypes) <*>
+      (spaces *> string "->" *> spaces *> typ) <*>
       (spaces *> char '=' *> spaces *> expr)
   ]
 

@@ -1,7 +1,5 @@
-f[x:int,y:int,z:int] -> int = x*y*z;
-
 main[] -> int =
   let [
-    a = f[0],
-    b = (f[1])[2]
-    ] in [ a[100,200] + b[3] ];
+    g = [lambda[x:int] -> int = 5],
+    m = [lambda[x:int] -> int = x * x]
+    ] in [m[g[10]]];
