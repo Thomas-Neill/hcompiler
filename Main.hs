@@ -8,6 +8,7 @@ import AST
 import Data.Maybe
 import Passes
 import System.Environment
+import System.Exit
 
 main = do
   args <- getArgs
@@ -15,12 +16,13 @@ main = do
     [] -> getLine
     [fname] -> readFile fname
   let ast' = parsed line
-  let (Right ast'') = ast'
-      ast = runPasses ast''
-  --mapM print ast''
-  mapM print ast
-  compile (workingMod $ execState
-    (do
-      declareGlobals $ map typeofDecl ast
-      mapM_ declCodegen ast)
-    (genCompilerState "???" "stdin")) "out.ll"
+  case ast' of
+    (Left err) -> die (show err)
+    (Right ast'') -> do
+      let ast = runPasses ast''
+      print ast
+      compile (workingMod $ execState
+        (do
+          declareGlobals $ map typeofDecl ast
+          mapM_ declCodegen ast)
+        (genCompilerState "???" "stdin")) "out.ll"

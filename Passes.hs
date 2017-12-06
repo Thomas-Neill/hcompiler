@@ -32,7 +32,24 @@ removeLambdas decls = evalState removeLambdas' 0
       newdefns <- fmap concat $ mapM extractLambdas decls
       put 0 --reset counter
       decls' <- mapM replaceLambdas decls
-      return $ newdefns ++ decls'
+      return $ typeGlobals $ newdefns ++ decls' --gotta type dem new lambders
+
+    closures :: Expr -> [(String,Type)]
+    closures (Lambda args _ ex) =
+        filter (\(x,_) -> x `notElem` (map fst args)) (usedVars ex)
+      where
+        usedVars (Binary _ l r) = usedVars l ++ usedVars r
+        usedVars (If a b c) = usedVars a ++ usedVars b ++ usedVars c
+        usedVars (Let pre e) =
+          (concat $ map usedVars (map snd pre)) ++
+            (filter (\(x,_) -> x `notElem` (map fst pre)) $ usedVars e)
+        usedVars (Call f args) =
+          usedVars f ++ concat (map usedVars args)
+        usedVars (Lambda args _ ex) =
+          (filter (\(x,_) -> x `notElem` (map fst args)) $ usedVars ex)
+        usedVars (TypedVar ty name) = [(name,ty)]
+        usedVars (Var _) = error "Oops, missed a var"
+        usedVars _ = []
 
     extractLambdas :: Declaration -> State Int [Declaration]
     extractLambdas (Extern _ _) = return []
@@ -56,10 +73,12 @@ removeLambdas decls = evalState removeLambdas' 0
       fds <- extractLambdasE f
       argsds <- fmap concat $ mapM extractLambdasE args
       return $ fds ++ argsds
-    extractLambdasE (Lambda args ret ex) = do
+    extractLambdasE whole@(Lambda args ret ex) = do
       exds <- extractLambdasE ex
       counter <- get
-      let this = FuncDef ("lambda__" ++ show counter) args ret ex
+      let
+        clses = closures whole
+        this = FuncDef ("lambda__" ++ show counter) (clses ++ args) ret ex
       put $ counter + 1
       return $ this:exds
     extractLambdasE _ = return []
@@ -90,10 +109,11 @@ removeLambdas decls = evalState removeLambdas' 0
       f' <- replaceLambdasE f
       args' <- mapM replaceLambdasE args
       return $ Call f' args'
-    replaceLambdasE (Lambda _ _ _) = do
+    replaceLambdasE whole@(Lambda _ _ _) = do
       counter <- get
       put $ counter + 1
-      return $ Var $ "lambda__" ++ show counter
+      let clses = closures whole
+      return $ Call (Var $ "lambda__" ++ show counter) (map (\(nm,ty) -> TypedVar ty nm) clses)
     replaceLambdasE x = return x
 
 typeGlobals decls = map typeGlobals' decls
@@ -116,4 +136,4 @@ actualTypeGlobals decls = map actualTypeGlobals' decls
       FuncDef name types (typeOf expr) $ typeVars [fixed] expr
     actualTypeGlobals' (Extern nm ty) = Extern nm ty
 
-runPasses = validate . actualTypeGlobals . typeArgs . typeGlobals . removeLambdas
+runPasses = validate . actualTypeGlobals . removeLambdas . typeArgs . typeGlobals
