@@ -1,5 +1,5 @@
-main[] -> int =
-  let [
-    g = [lambda[x:int] -> int = 5],
-    m = [lambda[x:int] -> int = x * x]
-    ] in [m[g[10]]];
+main() -> int =
+  let {
+    g = 3,
+    m = 10 + 10
+    } in { {lambda(x:int)->int=(g*x)+m}(10) };

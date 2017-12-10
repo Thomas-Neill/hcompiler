@@ -22,7 +22,7 @@ pad p = spaces *> p <* spaces
 
 varChar = oneOf "qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCCVBNM"
 
-argsTypes = char '[' *> (((,) <$> (pad $ many1 varChar) <*> (char ':' *> pad typ)) `sepBy` char ',') <* char ']'
+argsTypes = char '(' *> (((,) <$> (pad $ many1 varChar) <*> (char ':' *> pad typ)) `sepBy` char ',') <* char ')'
 
 var = Var <$> many1 varChar
 
@@ -30,8 +30,8 @@ typ = choice [
     string "int" *> pure HInt,
     string "float" *> pure HFloat,
     string "bool" *> pure HBool,
-    Func <$> (char '(' *> spaces *> char '[' *> typ `sepBy` (pad $ char ',')) <*>
-             (spaces *> char ']' *> spaces *> string "->" *> spaces *> typ <* spaces <* char ')')
+    Func <$> (char '(' *> spaces *> typ `sepBy` (pad $ char ',')) <*>
+             (spaces *> spaces *> string "->" *> spaces *> typ <* spaces <* char ')')
   ]
 
 primary = pad $ choice [
@@ -44,21 +44,21 @@ primary = pad $ choice [
   ]
 
 lambda = Lambda <$>
-  (char '[' *> spaces *> string "lambda" *> spaces *> argsTypes) <*>
+  (char '{' *> spaces *> string "lambda" *> spaces *> argsTypes) <*>
   (spaces *> string "->" *> spaces *> typ) <*>
-  (spaces *> char '=' *> expr <* char ']')
+  (spaces *> char '=' *> expr <* char '}')
 
 
-if' = If <$> (try (string "if") *> spaces *> char '[' *> expr) <*>
-             (char ']' *> spaces *> string "then" *> spaces *> char '[' *> expr) <*>
-             (char ']' *> spaces *> string "else" *> spaces *> char '[' *> expr <* char ']')
+if' = If <$> (try (string "if") *> spaces *> char '{' *> expr) <*>
+             (char '}' *> spaces *> string "then" *> spaces *> char '{' *> expr) <*>
+             (char '}' *> spaces *> string "else" *> spaces *> char '{' *> expr <* char '}')
 
-let' = Let <$> (try (string "let") *> spaces *> char '[' *> assignment `sepBy` char ',') <*>
-               (spaces *> char ']' *> spaces *> string "in" *> spaces *> char '[' *> expr <* char ']')
+let' = Let <$> (try (string "let") *> spaces *> char '{' *> assignment `sepBy` char ',') <*>
+               (spaces *> char '}' *> spaces *> string "in" *> spaces *> char '{' *> expr <* char '}')
     where
       assignment = (,) <$> (spaces *> many1 varChar <* spaces <* char '=') <*> expr
 
-call = Call <$> primary <*> (spaces *> try (char '[') *> spaces *> expr `sepBy` (pad $ char ',') <* char ']')
+call = Call <$> primary <*> (spaces *> try (char '(') *> spaces *> expr `sepBy` (pad $ char ',') <* char ')')
 
 special = pad $ choice [if',let',try call,primary]
 
