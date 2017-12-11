@@ -4,6 +4,8 @@ import qualified AST as H
 
 import Control.Monad.State
 import Debug.Trace
+import qualified Data.List as L
+import Data.Maybe
 
 import LLVM.AST
 import qualified LLVM.AST.IntegerPredicate as I
@@ -46,6 +48,20 @@ exprCodegen (H.Let es e) = do
   e' <- exprCodegen e
   popScope
   return e'
+
+exprCodegen whole@(H.StructLiteral props) = do
+  struct <- malloc (deref $ htoll $ H.typeOf whole)
+  flip mapM_ (zip props [0..]) $ \((_,ex),n) -> do
+    ex' <- exprCodegen ex
+    ptr <- gep' struct [0,n]
+    store ptr ex'
+  return struct
+
+exprCodegen (H.Access struct prop) = do
+  let (H.Structure props) = H.typeOf struct
+  struct' <- exprCodegen struct
+  ptr <- gep' struct' [0,fromIntegral $ fromJust $ prop `L.elemIndex` (map fst props)]
+  load ptr
 
 exprCodegen whole@(H.Call func args) = do
   func' <- exprCodegen func

@@ -3,7 +3,8 @@ import Data.Maybe
 import Util (commonArgs)
 import Data.List
 
-data Type = HInt | HFloat | HBool | Func [Type] Type | Curry [Type] Type Int deriving (Show)
+data Type = HInt | HFloat | HBool | Func [Type] Type | Curry [Type] Type Int |
+            Structure [(String,Type)] deriving (Show)
 
 instance Eq Type where
   HInt == HInt = True
@@ -15,6 +16,9 @@ instance Eq Type where
   f@(Func _ _) == c@(Curry _ _ _) = c == f
   (Curry args ret applied) == (Curry args1 ret1 applied1) =
     args == args1 && ret == ret1 && applied == applied1
+  --note: for two structure types to be equal, their fields must be in the same order
+  --and have the same names; hopefully this will prevent bugs
+  (Structure members) == (Structure members') = members == members'
   _ == _ = False
 
 
@@ -31,7 +35,9 @@ data Expr = ILit Integer |
             TypedVar Type String |
             Let [(String,Expr)] Expr |
             Call Expr [Expr] |
-            Lambda [(String,Type)] Type Expr deriving Show
+            Lambda [(String,Type)] Type Expr |
+            Access Expr String |
+            StructLiteral [(String,Expr)] deriving Show
 
 data BinOp = Add | Sub | Mul | Div | Equal | Inequal | Greater | Less | GrEqual | LEqual deriving (Show,Eq)
 
@@ -113,6 +119,13 @@ typeOf (Lambda args rettype expr) =
     Func (map snd args) $ typeOf expr
   else
     error "Lambda return disagrees with actual return."
+typeOf (Access expr label) =
+  case typeOf expr of
+    (Structure types) -> case lookup label types of
+      Nothing -> error $ "Field" ++ label ++ "DNE"
+      (Just x) -> x
+    _ -> error $ "not a structure"
+typeOf (StructLiteral exs) = Structure $ map (\(nm,e) -> (nm,typeOf e)) exs
 typeOf (Var ow) = error $ "Variable " ++ ow ++ " undeclared"
 
 

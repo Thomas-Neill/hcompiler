@@ -216,6 +216,8 @@ htoll (H.Func args rett) = FunctionType (htoll rett) (map htoll args) False
 htoll (H.Curry args rett applied) =
   pointerto $
     StructureType False $ (pointerto . htoll $ H.Func args rett):(map htoll $ take applied args)
+htoll (H.Structure props) =
+  pointerto $ StructureType False $ (map (htoll . snd) props)
 
 deref (PointerType ty _) = ty
 pointerto ty = PointerType ty (AS.AddrSpace 0)

@@ -4,15 +4,14 @@ import AST
 import Util
 import Control.Monad.State
 
-traceThrough :: (Show a) => a -> a
-traceThrough x = trace (show x) x
-
 passRecurseE :: (Expr -> Expr) -> Expr -> Expr
 passRecurseE p (Binary b l r) = Binary b (p l) (p r)
 passRecurseE p (If a b c) = If (p a) (p b) (p c)
 passRecurseE p (Let pre e) = Let ([(n,p ex) | (n,ex) <- pre]) (p e)
 passRecurseE p (Call f args) = Call (p f) (map p args)
 passRecurseE p (Lambda args ty ret) = Lambda args ty (p ret)
+passRecurseE p (Access ex prop) = Access (p ex) prop
+passRecurseE p (StructLiteral exs) = StructLiteral $ [(n,p ex) | (n,ex) <- exs]
 passRecurseE p x = x
 
 typeVars :: [[(String,Type)]] -> Expr -> Expr
@@ -41,12 +40,16 @@ removeLambdas decls = evalState removeLambdas' 0
         usedVars (Binary _ l r) = usedVars l ++ usedVars r
         usedVars (If a b c) = usedVars a ++ usedVars b ++ usedVars c
         usedVars (Let pre e) =
-          (concat $ map usedVars (map snd pre)) ++
+          (concat $ map (usedVars . snd) pre) ++
             (filter (\(x,_) -> x `notElem` (map fst pre)) $ usedVars e)
         usedVars (Call f args) =
           usedVars f ++ concat (map usedVars args)
         usedVars (Lambda args _ ex) =
           (filter (\(x,_) -> x `notElem` (map fst args)) $ usedVars ex)
+        usedVars (Access ex _) =
+          usedVars ex
+        usedVars (StructLiteral props) =
+          concat $ (map (usedVars . snd) props)
         usedVars (TypedVar ty name) = [(name,ty)]
         usedVars (Var _) = error "Oops, missed a var"
         usedVars _ = []
@@ -73,6 +76,9 @@ removeLambdas decls = evalState removeLambdas' 0
       fds <- extractLambdasE f
       argsds <- fmap concat $ mapM extractLambdasE args
       return $ fds ++ argsds
+    extractLambdasE (Access ex _) = extractLambdasE ex
+    extractLambdasE (StructLiteral props) =
+      fmap concat $ mapM extractLambdasE (map snd props)
     extractLambdasE whole@(Lambda args ret ex) = do
       exds <- extractLambdasE ex
       counter <- get
@@ -100,15 +106,23 @@ removeLambdas decls = evalState removeLambdas' 0
       c' <- replaceLambdasE c
       return $ If a' b' c'
     replaceLambdasE (Let pre e) = do
-      pre' <- flip mapM pre (\(nm,ex) -> do
+      pre' <- flip mapM pre $ \(nm,ex) -> do
         ex' <- replaceLambdasE ex
-        return (nm,ex'))
+        return (nm,ex')
       e' <- replaceLambdasE e
       return $ Let pre' e'
     replaceLambdasE (Call f args) = do
       f' <- replaceLambdasE f
       args' <- mapM replaceLambdasE args
       return $ Call f' args'
+    replaceLambdasE (Access ex s) = do
+      ex' <- replaceLambdasE ex
+      return $ Access ex' s
+    replaceLambdasE (StructLiteral props) = do
+      props' <- flip mapM props $ \(nm,ex) -> do
+        ex' <- replaceLambdasE ex
+        return (nm,ex')
+      return $ StructLiteral props'
     replaceLambdasE whole@(Lambda _ _ _) = do
       counter <- get
       put $ counter + 1

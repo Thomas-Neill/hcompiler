@@ -1,5 +1,3 @@
-main() -> int =
-  let {
-    g = 3,
-    m = 10 + 10
-    } in { {lambda(x:int)->int=(g*x)+m}(10) };
+mul(x:{a:int,b:int}) -> int = x.a * x.b;
+
+main() -> int = mul({a=5,b=6});

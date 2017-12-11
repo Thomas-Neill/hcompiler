@@ -31,22 +31,37 @@ typ = choice [
     string "float" *> pure HFloat,
     string "bool" *> pure HBool,
     Func <$> (char '(' *> spaces *> typ `sepBy` (pad $ char ',')) <*>
-             (spaces *> spaces *> string "->" *> spaces *> typ <* spaces <* char ')')
+             (spaces *> spaces *> string "->" *> spaces *> typ <* spaces <* char ')'),
+    Structure <$> (char '{' *> spaces *>
+      ((,) <$> (many varChar) <*> (spaces *> char ':' *> spaces *> typ))
+        `sepBy` (pad $ char ',')
+      <* spaces <* char '}')
   ]
 
-primary = pad $ choice [
+primary' = pad $ choice [
     boolit,
     var,
     try double,
     int,
     char '(' *> expr <* char ')',
-    lambda
+    try lambda,
+    struct
   ]
+
+primary = do
+  val <- primary'
+  (foldl (\acc x-> Access acc x) val) <$> (many $ (char '.' *> many varChar))
 
 lambda = Lambda <$>
   (char '{' *> spaces *> string "lambda" *> spaces *> argsTypes) <*>
   (spaces *> string "->" *> spaces *> typ) <*>
   (spaces *> char '=' *> expr <* char '}')
+
+struct = StructLiteral <$>
+  (char '{' *> spaces *>
+    ((,) <$> (many varChar) <*> (spaces *> char '=' *> spaces *> expr))
+      `sepBy` (pad $ char ',')
+   <* spaces <* char '}')
 
 
 if' = If <$> (try (string "if") *> spaces *> char '{' *> expr) <*>
