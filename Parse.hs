@@ -50,7 +50,11 @@ primary' = pad $ choice [
 
 primary = do
   val <- primary'
-  (foldl (\acc x-> Access acc x) val) <$> (many $ (char '.' *> many varChar))
+  foldl (\acc x-> x acc) val <$> (many $
+    choice [
+      (\prop acc -> Access acc prop) <$> (char '.' *> many varChar),
+      (\args acc -> Call acc args) <$> (char '(' *> (expr `sepBy` (pad $ char ',')) <* char ')')
+    ])
 
 lambda = Lambda <$>
   (char '{' *> spaces *> string "lambda" *> spaces *> argsTypes) <*>
@@ -73,9 +77,7 @@ let' = Let <$> (try (string "let") *> spaces *> char '{' *> assignment `sepBy` c
     where
       assignment = (,) <$> (spaces *> many1 varChar <* spaces <* char '=') <*> expr
 
-call = Call <$> primary <*> (spaces *> try (char '(') *> spaces *> expr `sepBy` (pad $ char ',') <* char ')')
-
-special = pad $ choice [if',let',try call,primary]
+special = pad $ choice [if',let',primary]
 
 mkBinLevel :: Parser Expr -> [(String,BinOp)] -> Parser Expr
 mkBinLevel prev opmap = prev `chainl1` op
