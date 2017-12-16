@@ -26,7 +26,7 @@ isNum HInt = True
 isNum HFloat = True
 isNum _ = False
 
-data Expr = ILit Integer |
+data Expr = ILit Int |
             FLit Float |
             BLit Bool |
             Binary BinOp Expr Expr |

@@ -50,7 +50,7 @@ exprCodegen (H.Let es e) = do
   return e'
 
 exprCodegen whole@(H.StructLiteral props) = do
-  struct <- malloc (deref $ htoll $ H.typeOf whole)
+  struct <- alloca (deref $ htoll $ H.typeOf whole)
   flip mapM_ (zip props [0..]) $ \((_,ex),n) -> do
     ex' <- exprCodegen ex
     ptr <- gep' struct [0,n]
@@ -64,18 +64,19 @@ exprCodegen (H.Access struct prop) = do
   load ptr
 
 exprCodegen whole@(H.Call func args) = do
+  let twhole = H.typeOf whole
   func' <- exprCodegen func
   args' <- mapM exprCodegen args
   case H.typeOf func of
     (H.Func args1 retu) ->
-      if length args == length args1 then
-        call func' args'
+      if length args == length args1 then do
+        result <- call func' args'
+        heapToStack result (htoll twhole)
       else do
-        let twhole = H.typeOf whole
-        struct <- malloc (deref $ htoll twhole)
+        struct <- alloca (deref $ htoll twhole)
         fptr <- gep' struct [0,0]
         store fptr func'
-        flip mapM (zip args' [1..]) $ \(val,n) -> do
+        flip mapM_ (zip args' [1..]) $ \(val,n) -> do
           ptr <- gep' struct [0,n]
           store ptr val
         return struct
@@ -86,24 +87,22 @@ exprCodegen whole@(H.Call func args) = do
           load it
         func'' <- gep' func' [0,0]
         func''' <- load func''
-        free func'
-        call func''' (args1' ++ args')
+        result <- call func''' (args1' ++ args')
+        heapToStack result (htoll twhole)
       else do
-        let twhole = H.typeOf whole
-        struct <- malloc (deref $ htoll twhole)
+        struct <- alloca (deref $ htoll twhole)
         func'' <- gep' func' [0,0]
         func''' <- load func''
         fptr <- gep' struct [0,0]
         store fptr func'''
-        flip mapM (take applied [1..]) $ \n -> do
+        flip mapM_ (take applied [1..]) $ \n -> do
           val <- gep' func' [0,n]
           val' <- load val
           vptr <- gep' struct [0,n]
           store vptr val'
-        flip mapM (zip args' [applied+1..]) $ \(val,n) -> do
-          vptr <- gep' struct [0,fromIntegral n]
+        flip mapM_ (zip args' [applied+1..]) $ \(val,n) -> do
+          vptr <- gep' struct [0,n]
           store vptr val
-        free func'
         return struct
 
 
@@ -167,7 +166,8 @@ declCodegen (H.FuncDef name args retu expr) = do
         pushScope $ globs ++ [(name,local $ strtoname name) | (name,ty) <- args]
         new <- newBlock
         useBlock new
-        result <- exprCodegen expr
+        result' <- exprCodegen expr
+        result <- stackToHeap result' (htoll $ H.typeOf expr)
         ret result)
 declCodegen (H.Extern name ty') = do
   addGlobal $ GlobalDefinition  $ case ty' of

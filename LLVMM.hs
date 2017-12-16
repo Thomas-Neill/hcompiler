@@ -52,7 +52,8 @@ tosbs = SBS.toShort . BS.pack
 strtoname = Name . tosbs
 
 --llvm types
-constint = ConstantOperand . C.Int (fromIntegral 32)
+constint :: Int -> Operand
+constint = ConstantOperand . C.Int (fromIntegral 32) . toInteger
 constb b = ConstantOperand . C.Int (fromIntegral 1) $ if b then 1 else 0
 constf = ConstantOperand . C.Float . F.Single
 
@@ -174,6 +175,8 @@ gep add indices = ins $ GetElementPtr False add indices []
 
 gep' add indices = gep add (map constint indices)
 
+alloca ty = ins $ Alloca ty Nothing 0 []
+
 malloc ty = do
   sz <- gep' (ConstantOperand $ C.Null $ pointerto ty) [1]
   size <- ins $ PtrToInt sz i32 []
@@ -182,11 +185,38 @@ malloc ty = do
   where
     mallocType = FunctionType (pointerto i8) [pointerto i8] False
 
+--move something from the GC "alloca" zone to the "malloc" zone
+--to transport between functions
+stackToHeap ptr (PointerType ty@(StructureType _ members) _) = do
+  ptr' <- malloc ty
+  flip mapM_ (zip members [0..]) $ \(memty,index) -> do
+    member <- gep' ptr [0,index]
+    member' <- load member
+    member'' <- stackToHeap member' memty
+    location <- gep' ptr' [0,index]
+    store location member''
+  return ptr'
+stackToHeap x _ = return x
+
+--move from malloc to alloca
+heapToStack ptr (PointerType ty@(StructureType _ members) _) = do
+  ptr' <- alloca ty
+  flip mapM_ (zip members [0..]) $ \(memty,index) -> do
+    member <- gep' ptr [0,index]
+    member' <- load member
+    member'' <- heapToStack member' memty
+    location <- gep' ptr' [0,index]
+    store location member''
+  free ptr
+  return ptr'
+heapToStack x _ = return x
+
 free ptr = do
   ptr' <- ins $ BitCast ptr (pointerto i8) []
   call (ConstantOperand $ C.GlobalReference freeType $ strtoname "free") [ptr']
   where
     freeType = FunctionType VoidType [pointerto i8] False
+
 load add = ins $ Load False add Nothing 0 []
 store add val = ins $ Store False add val Nothing 0 []
 
