@@ -20,9 +20,9 @@ main = do
     (Left err) -> die (show err)
     (Right ast'') -> do
       let ast = runPasses ast''
-      print ast''
+      mapM_ print ast''
       putStrLn "Passed: "
-      print ast
+      mapM_ print ast
       compile (workingMod $ execState
         (do
           declareGlobals $ map typeofDecl ast

@@ -4,7 +4,15 @@ import Util (commonArgs)
 import Data.List
 
 data Type = HInt | HFloat | HBool | Func [Type] Type | Curry [Type] Type Int |
-            Structure [(String,Type)] deriving (Show)
+            Structure [(String,Type)]
+
+instance Show Type where
+  show HInt = "int"
+  show HFloat = "float"
+  show HBool = "bool"
+  show (Func tys ret) = "((" ++ intercalate "," (map show tys) ++ ")->" ++ show ret ++ ")"
+  show (Curry tys ret app) = show (Func (drop app tys) ret)
+  show (Structure names) = "{" ++ intercalate "," (map (\(nm,ty) -> nm ++ ":" ++ show ty) names) ++ "}"
 
 instance Eq Type where
   HInt == HInt = True
@@ -37,9 +45,35 @@ data Expr = ILit Int |
             Call Expr [Expr] |
             Lambda [(String,Type)] Type Expr |
             Access Expr String |
-            StructLiteral [(String,Expr)] deriving Show
+            StructLiteral [(String,Expr)]
 
-data BinOp = Add | Sub | Mul | Div | Equal | Inequal | Greater | Less | GrEqual | LEqual deriving (Show,Eq)
+instance Show Expr where
+  show (ILit x) = show x
+  show (FLit f) = show f
+  show (BLit b) = show b
+  show (Binary op l r) = show l ++ show op ++ show r
+  show (If c l r) = "if {" ++ show c ++ "} then {" ++ show l ++ "} else {" ++ show r ++ "}"
+  show (Var s) = s
+  show (TypedVar ty s) = s ++ ":" ++ show ty
+  show (Let pre e) = "let {" ++ intercalate ", " (map show pre) ++ "} in {" ++ show e ++ "}"
+  show (Call e args) = "(" ++ show e ++ ")(" ++ intercalate ", " (map show args) ++ ")"
+  show (Lambda args ty ex) = "{lambda(" ++ intercalate ", " (map (\(nm,ty)->nm ++ ":" ++ show ty) args) ++ ")->" ++ show ty ++ "=" ++ show ex ++ "}"
+  show (Access ex prop) = "(" ++ show ex ++ ")." ++ prop
+  show (StructLiteral exs) = "{" ++ intercalate ", " (map (\(nm,ex)->nm++"="++show ex) exs) ++ "}"
+
+data BinOp = Add | Sub | Mul | Div | Equal | Inequal | Greater | Less | GrEqual | LEqual deriving Eq
+
+instance Show BinOp where
+  show Add = "+"
+  show Sub = "-"
+  show Mul = "*"
+  show Div = "/"
+  show Equal = "=="
+  show Inequal = "/="
+  show Greater = ">"
+  show Less = "<"
+  show GrEqual = ">="
+  show LEqual = "<="
 
 isComp Equal = True
 isComp Inequal = True
@@ -139,7 +173,7 @@ data Declaration =
 
 instance Show Declaration where
   show (FuncDef nm args ret bod) =
-    nm ++ "[" ++ intercalate " " (map (\(x,y) -> show x ++ ":" ++ show y) args) ++
+    nm ++ "[" ++ intercalate " " (map (\(x,y) -> x ++ ":" ++ show y) args) ++
     "] -> " ++ show ret ++ " = " ++ show bod ++ ";"
   show (Extern nm ty) = "extern " ++ nm ++ " : " ++ show ty ++ ";"
 
