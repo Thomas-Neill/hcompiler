@@ -50,7 +50,7 @@ exprCodegen (H.Let es e) = do
   return e'
 
 exprCodegen whole@(H.StructLiteral props) = do
-  struct <- alloca (deref $ htoll $ H.typeOf whole)
+  struct <- alloca (pointerReferent $ htoll $ H.typeOf whole)
   flip mapM_ (zip props [0..]) $ \((_,ex),n) -> do
     ex' <- exprCodegen ex
     ptr <- gep' struct [0,n]
@@ -73,7 +73,7 @@ exprCodegen whole@(H.Call func args) = do
         result <- call func' args'
         heapToStack result (htoll twhole)
       else do
-        struct <- alloca (deref $ htoll twhole)
+        struct <- alloca (pointerReferent $ htoll twhole)
         fptr <- gep' struct [0,0]
         store fptr func'
         flip mapM_ (zip args' [1..]) $ \(val,n) -> do
@@ -90,7 +90,7 @@ exprCodegen whole@(H.Call func args) = do
         result <- call func''' (args1' ++ args')
         heapToStack result (htoll twhole)
       else do
-        struct <- alloca (deref $ htoll twhole)
+        struct <- alloca (pointerReferent $ htoll twhole)
         func'' <- gep' func' [0,0]
         func''' <- load func''
         fptr <- gep' struct [0,0]
@@ -163,7 +163,7 @@ declCodegen (H.FuncDef name args retu expr) = do
     globs <- gets globals
     runCodegen glb (
       do
-        pushScope $ globs ++ [(name,local $ strtoname name) | (name,ty) <- args]
+        pushScope $ globs ++ [(name,local (htoll ty) $ strtoname name) | (name,ty) <- args]
         new <- newBlock
         useBlock new
         result' <- exprCodegen expr

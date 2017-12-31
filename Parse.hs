@@ -30,8 +30,8 @@ typ = choice [
     string "int" *> pure HInt,
     string "float" *> pure HFloat,
     string "bool" *> pure HBool,
-    Func <$> (char '(' *> spaces *> typ `sepBy` (pad $ char ',')) <*>
-             (spaces *> spaces *> string "->" *> spaces *> typ <* spaces <* char ')'),
+    Func <$> (char '(' *> spaces *> char '(' *> spaces *> typ `sepBy` (pad $ char ',')) <*>
+             (spaces *> char ')' *> spaces *> string "->" *> spaces *> typ <* spaces <* char ')'),
     Structure <$> (char '{' *> spaces *>
       ((,) <$> (many varChar) <*> (spaces *> char ':' *> spaces *> typ))
         `sepBy` (pad $ char ',')

@@ -146,44 +146,48 @@ addIns i = modifyCurrentBlock (\bst -> bst {instructions = instructions bst ++ [
 addTerm :: Terminator -> Codegen ()
 addTerm t = modifyCurrentBlock (\bst -> bst {terminator = Do t})
 
-local = LocalReference $
-  error "If you are reading this, the horrible hack you used to avoid typing the local references gave out."
+local = LocalReference
 
-ins :: Instruction -> Codegen Operand
-ins instr = do
+ins ty instr = do
   nm <- fresh
   addIns $ nm := instr
-  return $ local nm
+  return $ local ty nm
 
-mkiBinary bin l r = ins $ bin False False l r []
+do_ instr = do
+  addIns $ Do instr
+
+untyped_ins = ins (error "FIX THIS")
+
+mkiBinary bin l r = ins i32 $ bin False False l r []
 
 iadd = mkiBinary Add
 imul = mkiBinary Mul
 isub = mkiBinary Sub
 
-icmp predi l r = ins $ ICmp predi l r []
-fcmp predi l r = ins $ FCmp predi l r []
+icmp predi l r = ins i1 $ ICmp predi l r []
+fcmp predi l r = ins i1 $ FCmp predi l r []
 
-mkfBinary bin l r = ins $ bin NoFastMathFlags l r []
+mkfBinary bin l r = ins float $ bin NoFastMathFlags l r []
 
 fadd = mkfBinary FAdd
 fsub = mkfBinary FSub
 fmul = mkfBinary FMul
 fdiv = mkfBinary FDiv
 
-gep add indices = ins $ GetElementPtr False add indices []
+--type info not needed
+gep add indices = untyped_ins $ GetElementPtr False add indices []
 
 gep' add indices = gep add (map constint indices)
 
-alloca ty = ins $ Alloca ty Nothing 0 []
+alloca ty = ins (pointerto ty) $ Alloca ty Nothing 0 []
 
 malloc ty = do
   sz <- gep' (ConstantOperand $ C.Null $ pointerto ty) [1]
-  size <- ins $ PtrToInt sz i32 []
+  size <- ins i32 $ PtrToInt sz i32 []
   ptr <- call (ConstantOperand $ C.GlobalReference mallocType (strtoname "malloc")) [size]
-  ins $ BitCast ptr (pointerto ty) []
+  ins (pointerto ty) $ BitCast ptr (pointerto ty) []
   where
-    mallocType = FunctionType (pointerto i8) [pointerto i8] False
+    mallocType = pointerto $ FunctionType (pointerto i8) [i32] False
 
 --move something from the GC "alloca" zone to the "malloc" zone
 --to transport between functions
@@ -212,21 +216,24 @@ heapToStack ptr (PointerType ty@(StructureType _ members) _) = do
 heapToStack x _ = return x
 
 free ptr = do
-  ptr' <- ins $ BitCast ptr (pointerto i8) []
-  call (ConstantOperand $ C.GlobalReference freeType $ strtoname "free") [ptr']
+  ptr' <- ins (pointerto i8) $ BitCast ptr (pointerto i8) []
+  docall (ConstantOperand $ C.GlobalReference freeType $ strtoname "free") [ptr']
   where
-    freeType = FunctionType VoidType [pointerto i8] False
+    freeType = pointerto $ FunctionType VoidType [pointerto i8] False
 
-load add = ins $ Load False add Nothing 0 []
-store add val = ins $ Store False add val Nothing 0 []
+load add = ins (pointerReferent $ inferType add) $ Load False add Nothing 0 []
+store add val = do_ $ Store False add val Nothing 0 []
 
-floattoint x = ins $ FPToSI x i32 []
-inttofloat x = ins $ SIToFP x float []
-booltoint x = ins $ ZExt x i32 []
-call f args = ins $
+floattoint x = ins i32 $ FPToSI x i32 []
+inttofloat x = ins float $ SIToFP x float []
+booltoint x = ins i32 $ ZExt x i32 []
+call f args = ins (resultType $ inferType f) $
   Call Nothing CC.C [] (Right f) [(x,[]) | x <- args] [] []
 
-phi tp branches = ins $ Phi tp branches []
+docall f args = do_ $
+  Call Nothing CC.C [] (Right f) [(x,[]) | x <- args] [] []
+
+phi tp branches = ins tp $ Phi tp branches []
 
 br lbl = addTerm $ Br lbl []
 cbr b t f = addTerm $ CondBr b t f []
@@ -242,15 +249,20 @@ htoll :: H.Type -> Type
 htoll H.HBool = i1
 htoll H.HInt = i32
 htoll H.HFloat = float
-htoll (H.Func args rett) = FunctionType (htoll rett) (map htoll args) False
+htoll (H.Func args rett) = pointerto $ FunctionType (htoll rett) (map htoll args) False
 htoll (H.Curry args rett applied) =
   pointerto $
     StructureType False $ (pointerto . htoll $ H.Func args rett):(map htoll $ take applied args)
 htoll (H.Structure props) =
   pointerto $ StructureType False $ (map (htoll . snd) props)
 
-deref (PointerType ty _) = ty
 pointerto ty = PointerType ty (AS.AddrSpace 0)
+
+inferType :: Operand -> Type
+inferType (LocalReference ty _) = ty
+inferType (ConstantOperand c) = case c of
+  (C.GlobalReference ty _) -> ty
+  _ -> error "not implemented yet"
 
 requiredDefns = do
   let

@@ -173,8 +173,8 @@ data Declaration =
 
 instance Show Declaration where
   show (FuncDef nm args ret bod) =
-    nm ++ "[" ++ intercalate " " (map (\(x,y) -> x ++ ":" ++ show y) args) ++
-    "] -> " ++ show ret ++ " = " ++ show bod ++ ";"
+    nm ++ "(" ++ intercalate " " (map (\(x,y) -> x ++ ":" ++ show y) args) ++
+    ") -> " ++ show ret ++ " = " ++ show bod ++ ";"
   show (Extern nm ty) = "extern " ++ nm ++ " : " ++ show ty ++ ";"
 
 typeofDecl :: Declaration -> (String,Type)
