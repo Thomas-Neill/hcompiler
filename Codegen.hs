@@ -8,6 +8,7 @@ import qualified Data.List as L
 import Data.Maybe
 
 import LLVM.AST
+import LLVM.AST.Type
 import qualified LLVM.AST.IntegerPredicate as I
 import qualified LLVM.AST.Constant as C
 import qualified LLVM.AST.FloatingPointPredicate as FP --TODO: refactor all llvm imports into llvmm
@@ -43,67 +44,87 @@ exprCodegen whole@(H.If c t e) = do
 exprCodegen (H.Let es e) = do
   os <- mapM (\(name,expr) -> do
     o <- exprCodegen expr
-    return (name,o)) es
+    return (name,return o)) es
   pushScope os
   e' <- exprCodegen e
   popScope
   return e'
 
 exprCodegen whole@(H.StructLiteral props) = do
-  struct <- alloca (pointerReferent $ htoll $ H.typeOf whole)
+  struct <- malloc (pointerReferent $ htoll $ H.typeOf whole)
   flip mapM_ (zip props [0..]) $ \((_,ex),n) -> do
     ex' <- exprCodegen ex
-    ptr <- gep' struct [0,n]
+    ptr <- gep' (pointerto $ htoll $ H.typeOf ex) struct [0,n]
     store ptr ex'
   return struct
 
-exprCodegen (H.Access struct prop) = do
+exprCodegen w@(H.Access struct prop) = do
   let (H.Structure props) = H.typeOf struct
   struct' <- exprCodegen struct
-  ptr <- gep' struct' [0,fromIntegral $ fromJust $ prop `L.elemIndex` (map fst props)]
+  ptr <- gep' (pointerto $ htoll $ H.typeOf w) struct' [0,fromJust $ prop `L.elemIndex` (map fst props)]
   load ptr
 
 exprCodegen whole@(H.Call func args) = do
-  let twhole = H.typeOf whole
+  let (H.Func arglist _) = H.typeOf func
+      twhole = H.typeOf whole
   func' <- exprCodegen func
-  args' <- mapM exprCodegen args
-  case H.typeOf func of
-    (H.Func args1 retu) ->
-      if length args == length args1 then do
-        result <- call func' args'
-        heapToStack result (htoll twhole)
-      else do
-        struct <- alloca (pointerReferent $ htoll twhole)
-        fptr <- gep' struct [0,0]
-        store fptr func'
-        flip mapM_ (zip args' [1..]) $ \(val,n) -> do
-          ptr <- gep' struct [0,n]
-          store ptr val
-        return struct
-    (H.Curry args1 retu applied) -> do
-      if length args1 - applied == length args then do
-        args1' <- flip mapM (take applied [1..]) $ \n -> do
-          it <- gep' func' [0,n]
-          load it
-        func'' <- gep' func' [0,0]
-        func''' <- load func''
-        result <- call func''' (args1' ++ args')
-        heapToStack result (htoll twhole)
-      else do
-        struct <- alloca (pointerReferent $ htoll twhole)
-        func'' <- gep' func' [0,0]
-        func''' <- load func''
-        fptr <- gep' struct [0,0]
-        store fptr func'''
-        flip mapM_ (take applied [1..]) $ \n -> do
-          val <- gep' func' [0,n]
-          val' <- load val
-          vptr <- gep' struct [0,n]
-          store vptr val'
-        flip mapM_ (zip args' [applied+1..]) $ \(val,n) -> do
-          vptr <- gep' struct [0,n]
-          store vptr val
-        return struct
+  args' <- flip mapM args $ \arg -> do
+    arg' <- exprCodegen arg
+    storage <- malloc (htoll $ H.typeOf arg)
+    store storage arg'
+    bitcast storage voidptr
+  if length args /= length arglist then do
+      struct <- malloc (pointerReferent $ funcType)
+      funcptrloc <- gep' (pointerto voidptr) struct [0,0]
+      funcptr <- gep' (pointerto voidptr) func' [0,0] >>= load
+      --copy function pointer
+      store funcptrloc funcptr
+      ncurry <- gep' (pointerto i8) func' [0,1] >>= load
+      ncurry' <- addi8 ncurry (ConstantOperand $ C.Int 8 $ fromIntegral $ length args)
+      ncurryloc <- gep' (pointerto i8) struct [0,1]
+      store ncurryloc ncurry'
+      ncurry'' <- toi32 ncurry'
+      --calc new curried args and store
+      curries <- malloc' voidptr ncurry''
+      curriesloc <- gep' (pointerto $ pointerto voidptr) struct [0,2]
+      store curriesloc curries
+      --get curry pointer
+      oldCurries <- gep' (pointerto $ pointerto voidptr) func' [0,2] >>= load
+      dests <- mapM (const newBlock) [0..1]
+      done <- newBlock
+      switch ncurry (zip (map (C.Int 8) [0..1]) dests) --based on value of ncurry, we load n old args before starting new ones
+      flip mapM_ (zip dests [0..15]) $ \(dest,ncurry) -> do
+        useBlock dest
+        flip mapM_ [0..ncurry-1] $ \ind -> do
+          val <- gep' (pointerto voidptr) oldCurries [ind] >>= load
+          loc <- gep' (pointerto voidptr) curries [ind]
+          store loc val
+          --copy old curries to new location
+        flip mapM_ [0..length args - 1] $ \ind -> do
+          loc <- gep' (pointerto voidptr) curries [ind + ncurry]
+          store loc (args' !! ind)
+          --copy new curries
+          br done
+      useBlock done
+      return struct
+    else do
+      targets <- mapM (const newBlock) [0..1]
+      done <- newBlock
+      ncurry <- gep' (pointerto i8) func' [0,1] >>= load
+      switch ncurry (zip (map (C.Int 8) [0..1]) targets)
+      vals <- flip mapM (zip targets [0..1]) $ \(target,ncurry) -> do
+        useBlock target
+        funcptr <- gep' (pointerto voidptr) func' [0,0] >>= load
+        funcptr' <- bitcast funcptr (funcNargs (htoll twhole) (ncurry + length args))
+        curryLoc <- gep' (pointerto $ pointerto voidptr) func' [0,2] >>= load
+        curries <- flip mapM [0..ncurry-1] $ \ind ->
+          gep' (pointerto voidptr) curryLoc [ind] >>= load
+        result <- call funcptr' (curries ++ args')
+        br done
+        return result
+      useBlock done
+      phi (htoll twhole) (zip vals targets)
+
 
 
 exprCodegen (H.Binary op l r) = do --jesus this is bad
@@ -153,21 +174,35 @@ exprCodegen (H.Binary op l r) = do --jesus this is bad
 declareGlobals :: [(String,H.Type)] -> LLVMM ()
 declareGlobals decls = do
   mapM_ defineGlobal
-    [(name,ConstantOperand (C.GlobalReference (htoll ty) (strtoname name)))
+    [(name,ConstantOperand (C.GlobalReference (funcPtrType ty) (strtoname name)))
       | (name,ty) <- decls]
   requiredDefns
 
 declCodegen :: H.Declaration -> LLVMM ()
 declCodegen (H.FuncDef name args retu expr) = do
-    let glb = genFunction (htoll $ H.typeOf expr) (strtoname name) [(htoll ty,strtoname name) | (name,ty) <- args]
+    let glb = genFunction (htoll $ H.typeOf expr) (strtoname name) [(voidptr,strtoname name) | (name,ty) <- args]
     globs <- gets globals
+    let globs' = map (\(name,operand) -> (,) name $ do
+        struct <- malloc (pointerReferent $ funcType)
+        op' <- bitcast operand voidptr
+        fntarget <- gep' (pointerto voidptr) struct [0,0]
+        store fntarget op'
+        ntarget <- gep' (pointerto i8) struct [0,1]
+        store ntarget (ConstantOperand $ C.Int 8 0)
+        atarget <- gep' (pointerto $ pointerto voidptr) struct [0,2]
+        store atarget (ConstantOperand $ C.Null $ pointerto voidptr)
+        return struct
+          ) globs
     runCodegen glb (
       do
-        pushScope $ globs ++ [(name,local (htoll ty) $ strtoname name) | (name,ty) <- args]
         new <- newBlock
         useBlock new
-        result' <- exprCodegen expr
-        result <- stackToHeap result' (htoll $ H.typeOf expr)
+        names <- flip mapM args $ \(name,ty) -> do
+          ptr' <- bitcast (local voidptr $ strtoname name) (pointerto $ htoll ty)
+          val <- load ptr'
+          return (name,return val)
+        pushScope $ globs' ++ names
+        result <- exprCodegen expr
         ret result)
 declCodegen (H.Extern name ty') = do
   addGlobal $ GlobalDefinition  $ case ty' of

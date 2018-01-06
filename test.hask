@@ -1,3 +1,6 @@
-mul(a:int,b:int) -> {result:int} = {result=a*b};
+add(x:int,y:int) -> int = x  + y;
+inc(x:int) -> int = x + 1;
 
-main() -> int = let { f = mul(0)} in { (f(10)).result + (f(20)).result};
+choose(b:bool) -> ((int) -> int) = if {b} then {inc} else {add(1)};
+
+main() -> int = choose(true)(10) + choose(false)(5);

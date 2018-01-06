@@ -18,6 +18,7 @@ import qualified LLVM.AST.AddrSpace as AS
 
 import Control.Monad.State
 
+import Debug.Trace
 import Data.Word
 import qualified Data.ByteString.Short as SBS
 import qualified Data.ByteString.Char8 as BS
@@ -34,7 +35,7 @@ data FnState =
   FnState {
     currentBlock :: Name,
     blocks :: [(Name,BlockState)],
-    scope :: [[(String,Operand)]],
+    scope :: [[(String,Codegen Operand)]],
     ctr :: Int
   }
 
@@ -53,8 +54,8 @@ strtoname = Name . tosbs
 
 --llvm types
 constint :: Int -> Operand
-constint = ConstantOperand . C.Int (fromIntegral 32) . toInteger
-constb b = ConstantOperand . C.Int (fromIntegral 1) $ if b then 1 else 0
+constint = ConstantOperand . C.Int 32 . toInteger
+constb b = ConstantOperand . C.Int 1 $ if b then 1 else 0
 constf = ConstantOperand . C.Float . F.Single
 
 --monad utils
@@ -128,7 +129,7 @@ modifyCurrentBlock f = do
   blk <- gets currentBlock
   modify $ \st -> st {blocks = modifyKey blk f (blocks st)}
 
-pushScope :: [(String,Operand)] -> Codegen ()
+pushScope :: [(String,Codegen Operand)] -> Codegen ()
 pushScope ex = modify $ \st -> st {scope = ex:scope st}
 
 popScope :: Codegen ()
@@ -137,7 +138,7 @@ popScope = modify $ \st -> st { scope = tail $ scope st}
 find :: String -> Codegen Operand
 find s = do
     st <- get
-    return $ resolve (scope st) s
+    resolve (scope st) s
 
 --adding instructions
 addIns :: Named Instruction -> Codegen ()
@@ -175,59 +176,41 @@ fmul = mkfBinary FMul
 fdiv = mkfBinary FDiv
 
 --type info not needed
-gep add indices = untyped_ins $ GetElementPtr False add indices []
+gep ty add indices = ins ty $ GetElementPtr False add indices []
 
-gep' add indices = gep add (map constint indices)
+gep' ty add indices = gep ty add (map constint indices)
 
 alloca ty = ins (pointerto ty) $ Alloca ty Nothing 0 []
 
-malloc ty = do
-  sz <- gep' (ConstantOperand $ C.Null $ pointerto ty) [1]
+malloc' ty mult = do
+  sz <- gep' (pointerto ty) (ConstantOperand $ C.Null $ pointerto ty) [1]
   size <- ins i32 $ PtrToInt sz i32 []
-  ptr <- call (ConstantOperand $ C.GlobalReference mallocType (strtoname "malloc")) [size]
-  ins (pointerto ty) $ BitCast ptr (pointerto ty) []
+  size' <- imul size mult
+  ptr <- call (ConstantOperand $ C.GlobalReference mallocType (strtoname "malloc")) [size']
+  bitcast ptr (pointerto ty)
   where
-    mallocType = pointerto $ FunctionType (pointerto i8) [i32] False
+    mallocType = pointerto $ FunctionType (voidptr) [i32] False
 
---move something from the GC "alloca" zone to the "malloc" zone
---to transport between functions
-stackToHeap ptr (PointerType ty@(StructureType _ members) _) = do
-  ptr' <- malloc ty
-  flip mapM_ (zip members [0..]) $ \(memty,index) -> do
-    member <- gep' ptr [0,index]
-    member' <- load member
-    member'' <- stackToHeap member' memty
-    location <- gep' ptr' [0,index]
-    store location member''
-  return ptr'
-stackToHeap x _ = return x
+malloc ty = malloc' ty (constint 1)
 
---move from malloc to alloca
-heapToStack ptr (PointerType ty@(StructureType _ members) _) = do
-  ptr' <- alloca ty
-  flip mapM_ (zip members [0..]) $ \(memty,index) -> do
-    member <- gep' ptr [0,index]
-    member' <- load member
-    member'' <- heapToStack member' memty
-    location <- gep' ptr' [0,index]
-    store location member''
-  free ptr
-  return ptr'
-heapToStack x _ = return x
+bitcast ptr ty = ins ty $ BitCast ptr ty []
 
 free ptr = do
-  ptr' <- ins (pointerto i8) $ BitCast ptr (pointerto i8) []
+  ptr' <- bitcast ptr voidptr
   docall (ConstantOperand $ C.GlobalReference freeType $ strtoname "free") [ptr']
   where
-    freeType = pointerto $ FunctionType VoidType [pointerto i8] False
+    freeType = pointerto $ FunctionType VoidType [voidptr] False
 
 load add = ins (pointerReferent $ inferType add) $ Load False add Nothing 0 []
 store add val = do_ $ Store False add val Nothing 0 []
 
+toi32 x = ins i32 $ ZExt x i32 []
+addi8 l r = ins i8 $ Add False False l r []
+
 floattoint x = ins i32 $ FPToSI x i32 []
 inttofloat x = ins float $ SIToFP x float []
 booltoint x = ins i32 $ ZExt x i32 []
-call f args = ins (resultType $ inferType f) $
+call f args = ins (resultType $ pointerReferent $ inferType f) $
   Call Nothing CC.C [] (Right f) [(x,[]) | x <- args] [] []
 
 docall f args = do_ $
@@ -239,24 +222,42 @@ br lbl = addTerm $ Br lbl []
 cbr b t f = addTerm $ CondBr b t f []
 ret val = addTerm $ Ret (Just val) []
 
+unreachable = addTerm $ Unreachable []
+
+--note: calling this screws up your
+switch cond dests = do
+  deflt <- newBlock
+  addTerm $ Switch cond deflt dests []
+  useBlock deflt
+  unreachable
+
+
+
 cast :: H.Type -> H.Type -> Operand -> Codegen Operand
 cast H.HFloat H.HInt op = floattoint op
 cast H.HInt H.HFloat op = inttofloat op
 cast H.HBool H.HInt op = booltoint op
 cast x y o = if x == y then return o else error "Not Implemented"
 
+funcType = pointerto $ StructureType False $ [voidptr,i8,pointerto voidptr]
+
 htoll :: H.Type -> Type
 htoll H.HBool = i1
 htoll H.HInt = i32
 htoll H.HFloat = float
-htoll (H.Func args rett) = pointerto $ FunctionType (htoll rett) (map htoll args) False
-htoll (H.Curry args rett applied) =
-  pointerto $
-    StructureType False $ (pointerto . htoll $ H.Func args rett):(map htoll $ take applied args)
+htoll (H.Func args ret) = funcType
 htoll (H.Structure props) =
   pointerto $ StructureType False $ (map (htoll . snd) props)
 
+--instead of the function objects we pass around, this is the actual LLVM function pointer type
+funcPtrType :: H.Type -> Type
+funcPtrType (H.Func args ret) = funcNargs (htoll ret) (length args)
+
+funcNargs ret nargs = pointerto $ FunctionType ret (replicate nargs voidptr) False
+
 pointerto ty = PointerType ty (AS.AddrSpace 0)
+
+voidptr = pointerto i8
 
 inferType :: Operand -> Type
 inferType (LocalReference ty _) = ty
@@ -266,7 +267,7 @@ inferType (ConstantOperand c) = case c of
 
 requiredDefns = do
   let
-    mallocGlobal = (genFunction (pointerto i8) (strtoname "malloc") [(i32,strtoname "size")])
-    freeGlobal = (genFunction VoidType (strtoname "free") [(pointerto i8,strtoname "target")])
+    mallocGlobal = (genFunction (voidptr) (strtoname "malloc") [(i32,strtoname "size")])
+    freeGlobal = (genFunction VoidType (strtoname "free") [(voidptr,strtoname "target")])
   addGlobal $ GlobalDefinition mallocGlobal
   addGlobal $ GlobalDefinition freeGlobal

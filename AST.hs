@@ -3,31 +3,15 @@ import Data.Maybe
 import Util (commonArgs)
 import Data.List
 
-data Type = HInt | HFloat | HBool | Func [Type] Type | Curry [Type] Type Int |
-            Structure [(String,Type)]
+data Type = HInt | HFloat | HBool | Func [Type] Type |
+            Structure [(String,Type)] deriving Eq
 
 instance Show Type where
   show HInt = "int"
   show HFloat = "float"
   show HBool = "bool"
   show (Func tys ret) = "((" ++ intercalate "," (map show tys) ++ ")->" ++ show ret ++ ")"
-  show (Curry tys ret app) = show (Func (drop app tys) ret)
   show (Structure names) = "{" ++ intercalate "," (map (\(nm,ty) -> nm ++ ":" ++ show ty) names) ++ "}"
-
-instance Eq Type where
-  HInt == HInt = True
-  HFloat == HFloat = True
-  HBool == HBool = True
-  Func args ret == Func args1 ret1 = args == args1 && ret == ret1
-  (Curry args ret applied) == Func args1 ret1 =
-    ret == ret1 && (drop applied args) == args1
-  f@(Func _ _) == c@(Curry _ _ _) = c == f
-  (Curry args ret applied) == (Curry args1 ret1 applied1) =
-    args == args1 && ret == ret1 && applied == applied1
-  --note: for two structure types to be equal, their fields must be in the same order
-  --and have the same names; hopefully this will prevent bugs
-  (Structure members) == (Structure members') = members == members'
-  _ == _ = False
 
 
 isNum HInt = True
@@ -135,18 +119,15 @@ typeOf (Call f args) =
       (Func args ret) ->
         if args /= ta then
           if length args > length ta then
-            Curry args ret (commonArgs ta args)
+            let (applied,remaining) = splitAt (length ta) args
+            in
+              if applied == ta then
+                Func remaining ret
+              else
+                error "Invalid arg types"
           else
             error "More args than the function takes"
         else ret
-      (Curry args ret applied) ->
-        if (drop applied args) /= ta then
-          if length args - applied > length ta then
-            Curry args ret (applied + commonArgs ta (drop applied args))
-          else
-            error "More args than the function takes"
-        else
-          ret
       _ -> error "You can only call a function!"
 typeOf (Lambda args rettype expr) =
   if typeOf expr == rettype then
