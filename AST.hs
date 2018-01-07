@@ -29,7 +29,8 @@ data Expr = ILit Int |
             Call Expr [Expr] |
             Lambda [(String,Type)] Type Expr |
             Access Expr String |
-            StructLiteral [(String,Expr)]
+            StructLiteral [(String,Expr)] |
+            Cast Type Expr
 
 instance Show Expr where
   show (ILit x) = show x
@@ -44,8 +45,9 @@ instance Show Expr where
   show (Lambda args ty ex) = "{lambda(" ++ intercalate ", " (map (\(nm,ty)->nm ++ ":" ++ show ty) args) ++ ")->" ++ show ty ++ "=" ++ show ex ++ "}"
   show (Access ex prop) = "(" ++ show ex ++ ")." ++ prop
   show (StructLiteral exs) = "{" ++ intercalate ", " (map (\(nm,ex)->nm++"="++show ex) exs) ++ "}"
+  show (Cast ty expr) = "cast<" ++ show ty ++ ">(" ++ show expr ++ ")"
 
-data BinOp = Add | Sub | Mul | Div | Equal | Inequal | Greater | Less | GrEqual | LEqual deriving Eq
+data BinOp = Add | Sub | Mul | Div | Equal | Inequal | Greater | Less | GrEqual | LEqual | And | Or deriving Eq
 
 instance Show BinOp where
   show Add = "+"
@@ -58,6 +60,8 @@ instance Show BinOp where
   show Less = "<"
   show GrEqual = ">="
   show LEqual = "<="
+  show And = "&&"
+  show Or = "||"
 
 isComp Equal = True
 isComp Inequal = True
@@ -67,7 +71,18 @@ isComp GrEqual = True
 isComp LEqual = True
 isComp _ = False
 
-isMath = not . isComp
+isMath Add = True
+isMath Sub = True
+isMath Mul = True
+isMath Div = True
+isMath _ = False
+
+castable :: Type -> Type -> Bool
+castable HInt HBool = True
+castable HBool HInt = True
+castable HFloat HInt = True
+castable HInt HFloat = True
+castable x y = x == y
 
 typeOf :: Expr -> Type
 typeOf (ILit _) = HInt
@@ -76,36 +91,36 @@ typeOf (BLit _) = HBool
 typeOf (Binary op l r) =
   let lt = typeOf l
       rt = typeOf r
-      nnumerr = error "Expected both numeric types in math expression."
-      wrongtypes = error "Different types to compare"
-  in if op == Div then
-      if not $ isNum lt && isNum rt then
-        nnumerr
-      else
-        HFloat
+  in if lt /= rt then
+      error "Can't compare different types"
     else
       if isMath op then
-        if not $ isNum lt && isNum rt then
-          nnumerr
-        else
-          lt `binResult` rt
+        case lt of
+          HInt -> HInt
+          HFloat -> HFloat
+          lt -> error $ "Can't add type " ++ show lt
       else
-        if lt /= rt then
-          wrongtypes
-        else
-          HBool
+        if isComp op then
+          case lt of
+            HInt -> HBool
+            HFloat -> HBool
+            HBool -> HBool
+            other -> error $ "It is impossible to compare items of type " ++ show other
+        else --logical/bitwise
+          if lt == HInt || lt == HBool then
+            lt
+          else
+            error $ "Can't perform logical/bitwise operations on type " ++ show lt
 typeOf (If c l r) =
   let ct = typeOf c
       lt = typeOf l
       rt = typeOf r
-      excond = error "Expected bool in condition."
-      branches = error "Expected both sides of if to be same type."
   in
     if ct /= HBool then
-      excond
+      error "Expected bool in condition."
     else
       if lt /= rt then
-          branches
+          error "Expected both sides of if to be same type."
       else
         lt
 typeOf (Let es e) = (foldl1 seq $ fmap (typeOf . snd) es) `seq` typeOf e
@@ -141,12 +156,13 @@ typeOf (Access expr label) =
       (Just x) -> x
     _ -> error $ "not a structure"
 typeOf (StructLiteral exs) = Structure $ map (\(nm,e) -> (nm,typeOf e)) exs
+typeOf (Cast ty expr) =
+  if castable ty (typeOf expr) then
+    ty
+  else
+    error $ "Can't cast type " ++ show (typeOf expr) ++ " to " ++ show ty
+    
 typeOf (Var ow) = error $ "Variable " ++ ow ++ " undeclared"
-
-
-binResult HFloat _ = HFloat
-binResult _ HFloat = HFloat
-binResult HInt HInt = HInt
 
 data Declaration =
   FuncDef String [(String,Type)] Type Expr |

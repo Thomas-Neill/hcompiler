@@ -77,7 +77,10 @@ let' = Let <$> (try (string "let") *> spaces *> char '{' *> assignment `sepBy` c
     where
       assignment = (,) <$> (spaces *> many1 varChar <* spaces <* char '=') <*> expr
 
-special = pad $ choice [if',let',primary]
+cast = Cast <$> (try (string "cast<") *> spaces *> typ) <*>
+                (char '>' *> spaces *> char '(' *> expr <* char ')')
+
+special = pad $ choice [if',let',cast,primary]
 
 mkBinLevel :: Parser Expr -> [(String,BinOp)] -> Parser Expr
 mkBinLevel prev opmap = prev `chainl1` op
@@ -89,8 +92,9 @@ mkBinLevel prev opmap = prev `chainl1` op
 factor = mkBinLevel special [("*",Mul),("/",Div)]
 addition = mkBinLevel factor [("+",Add),("-",Sub)]
 comparison = mkBinLevel addition [("==",Equal),("/=",Inequal),("<=",LEqual),(">=",GrEqual),(">",Greater),("<",Less)]
-
-expr = comparison
+and' = mkBinLevel comparison [("&&",And)]
+or' = mkBinLevel and' [("||",Or)]
+expr = or'
 
 decl = pad $ choice [
     Extern <$>

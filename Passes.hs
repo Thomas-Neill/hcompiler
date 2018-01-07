@@ -143,11 +143,4 @@ typeArgs decls = map typeArgs' decls
       FuncDef name types ret $ typeVars [types] expr
     typeArgs' (Extern nm ty) = Extern nm ty
 
-actualTypeGlobals decls = map actualTypeGlobals' decls
-  where --we can now find the actual types using the function bodies
-    fixed = map typeofDeclAct decls
-    actualTypeGlobals' (FuncDef name types ret expr) =
-      FuncDef name types (typeOf expr) $ typeVars [fixed] expr
-    actualTypeGlobals' (Extern nm ty) = Extern nm ty
-
-runPasses = validate . actualTypeGlobals . removeLambdas . typeArgs . typeGlobals
+runPasses = validate . removeLambdas . typeArgs . typeGlobals

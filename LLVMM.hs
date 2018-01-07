@@ -164,7 +164,12 @@ mkiBinary bin l r = ins i32 $ bin False False l r []
 iadd = mkiBinary Add
 imul = mkiBinary Mul
 isub = mkiBinary Sub
+idiv l r = ins i32 $ SDiv False l r []
 
+bitand l r = ins i32 $ And l r []
+bitor l r = ins i32 $ Or l r []
+logicand l r = ins i1 $ And l r []
+logicor l r = ins i1 $ Or l r []
 icmp predi l r = ins i1 $ ICmp predi l r []
 fcmp predi l r = ins i1 $ FCmp predi l r []
 
@@ -224,20 +229,11 @@ ret val = addTerm $ Ret (Just val) []
 
 unreachable = addTerm $ Unreachable []
 
---note: calling this screws up your
 switch cond dests = do
   deflt <- newBlock
   addTerm $ Switch cond deflt dests []
   useBlock deflt
   unreachable
-
-
-
-cast :: H.Type -> H.Type -> Operand -> Codegen Operand
-cast H.HFloat H.HInt op = floattoint op
-cast H.HInt H.HFloat op = inttofloat op
-cast H.HBool H.HInt op = booltoint op
-cast x y o = if x == y then return o else error "Not Implemented"
 
 funcType = pointerto $ StructureType False $ [voidptr,i8,pointerto voidptr]
 

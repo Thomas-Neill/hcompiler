@@ -127,40 +127,34 @@ exprCodegen whole@(H.Call func args) = do
 
 
 
-exprCodegen (H.Binary op l r) = do --jesus this is bad
+exprCodegen (H.Binary op l r) = do
   l' <- exprCodegen l
   r' <- exprCodegen r
-  if op == H.Div then do
-    l'' <- cast (H.typeOf l) H.HFloat l'
-    r'' <- cast (H.typeOf r) H.HFloat r'
-    fdiv l'' r''
-  else let
-    lt = H.typeOf l
-    rt = H.typeOf r
-    in if H.isMath op then do
-        let castType = lt `H.binResult` rt
-        l'' <- cast lt castType l'
-        r'' <- cast rt castType r'
-        if castType == H.HInt then
-          case op of
-            H.Add -> iadd l'' r''
-            H.Sub -> isub l'' r''
-            H.Mul -> imul l'' r''
-        else
-          case op of
-            H.Add -> fadd l'' r''
-            H.Sub -> fsub l'' r''
-            H.Mul -> fmul l'' r''
-      else if H.isComp op then
-        if lt == H.HInt || lt == H.HBool then
-          icmp (case op of
-            H.Equal -> I.EQ
-            H.Inequal -> I.NE
-            H.Greater -> I.SGT
-            H.Less -> I.SLT
-            H.GrEqual -> I.SGE
-            H.LEqual -> I.SLE) l' r'
-        else
+  let lt = H.typeOf l
+  if H.isMath op then
+    if lt == H.HInt then
+      case op of
+        H.Add -> iadd l' r'
+        H.Sub -> isub l' r'
+        H.Mul -> imul l' r'
+        H.Div -> idiv l' r'
+    else
+      case op of
+        H.Add -> fadd l' r'
+        H.Sub -> fsub l' r'
+        H.Mul -> fmul l' r'
+        H.Div -> fdiv l' r'
+  else
+    if H.isComp op then
+      if lt == H.HInt || lt == H.HBool then
+        icmp (case op of
+          H.Equal -> I.EQ
+          H.Inequal -> I.NE
+          H.Greater -> I.SGT
+          H.Less -> I.SLT
+          H.GrEqual -> I.SGE
+          H.LEqual -> I.SLE) l' r'
+      else
           fcmp (case op of
             H.Equal -> FP.OEQ
             H.Inequal -> FP.ONE
@@ -168,8 +162,31 @@ exprCodegen (H.Binary op l r) = do --jesus this is bad
             H.Less -> FP.OLT
             H.GrEqual -> FP.OGE
             H.LEqual -> FP.OLE) l' r'
+    else
+      if lt == H.HBool then
+        if op == H.And then
+          logicand l' r'
         else
-          error "What?"
+          logicor l' r'
+      else
+        if op == H.And then
+          bitand l' r'
+        else
+          bitor l' r'
+
+exprCodegen (H.Cast ty expr) = do
+  if ty == H.typeOf expr then
+    exprCodegen expr
+  else do
+    case H.typeOf expr of
+      H.HBool -> case ty of
+          H.HInt -> exprCodegen expr >>= booltoint
+      H.HInt -> case ty of
+        H.HFloat -> exprCodegen expr >>= inttofloat
+        H.HBool -> exprCodegen (H.Binary H.Equal expr (H.ILit 0))
+      H.HFloat -> case ty of
+        H.HInt -> exprCodegen expr >>= floattoint
+
 
 declareGlobals :: [(String,H.Type)] -> LLVMM ()
 declareGlobals decls = do
