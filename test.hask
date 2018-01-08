@@ -1,6 +1,14 @@
-add(x:int,y:int) -> int = x  + y;
-inc(x:int) -> int = x + 1;
+wrap(x:int) -> {nil:{}|x:int} = unionize<{nil:{}|x:int}>(x=x);
+null() -> {nil:{}|x:int} = unionize<{nil:{}|x:int}>(nil={});
+safeadd(foo:{nil:{}|x:int}) -> {nil:{}|x:int} =
+  case {foo} of {
+    ignore:(nil:{}) = null();
+    x:(x:int) = wrap(x+10);
+};
+unwrap(bar:{nil:{}|x:int}) -> int =
+  case {bar} of {
+    ignore:(nil:{}) = 0;
+    x:(x:int) = x;
+};
 
-choose(b:bool) -> ((int) -> int) = if {b} then {inc} else {add(1)};
-
-main() -> int = choose(true)(10) + choose(false)(5);
+main() -> int = unwrap(safeadd(null())) + unwrap(safeadd(wrap(20)));

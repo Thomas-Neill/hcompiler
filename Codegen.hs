@@ -125,8 +125,6 @@ exprCodegen whole@(H.Call func args) = do
       useBlock done
       phi (htoll twhole) (zip vals targets)
 
-
-
 exprCodegen (H.Binary op l r) = do
   l' <- exprCodegen l
   r' <- exprCodegen r
@@ -186,6 +184,39 @@ exprCodegen (H.Cast ty expr) = do
         H.HBool -> exprCodegen (H.Binary H.Equal expr (H.ILit 0))
       H.HFloat -> case ty of
         H.HInt -> exprCodegen expr >>= floattoint
+
+exprCodegen (H.Unionize ty cs expr) = do
+  let
+    (H.Union css) = ty
+    index = fromJust $ cs `L.elemIndex` (map fst css)
+  struct <- malloc (pointerReferent $ htoll ty)
+  indexLoc <- gep' (pointerto i32) struct [0,0]
+  store indexLoc (constint index)
+  valLoc <- gep' (pointerto voidptr) struct [0,1]
+  val <- malloc (htoll $ H.typeOf expr)
+  exprCodegen expr >>= store val
+  bitcast val voidptr >>= store valLoc
+  return struct
+
+exprCodegen whole@(H.Case ex cases) = do
+  done <- newBlock
+  caseBlocks <- mapM (const newBlock) cases
+  ex' <- exprCodegen ex
+  ty <- gep' (pointerto i32) ex' [0,0] >>= load
+  switch ty (zip (map (C.Int 32) [0..]) caseBlocks)
+  phis <- flip mapM (zip caseBlocks cases ) $ \(blk,(nm,_,ty,ex)) -> do
+    useBlock blk
+    val <- gep' (pointerto voidptr) ex' [0,1] >>= load >>= flip bitcast (pointerto $ htoll ty) >>= load
+    pushScope [(nm,return val)]
+    ex' <- exprCodegen ex
+    popScope
+    br done
+    blk' <- gets currentBlock
+    return (ex',blk')
+  useBlock done
+  phi (htoll $ H.typeOf whole) phis
+
+
 
 
 declareGlobals :: [(String,H.Type)] -> LLVMM ()

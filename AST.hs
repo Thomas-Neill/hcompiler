@@ -4,7 +4,7 @@ import Util (commonArgs)
 import Data.List
 
 data Type = HInt | HFloat | HBool | Func [Type] Type |
-            Structure [(String,Type)] deriving Eq
+            Structure [(String,Type)] | Union [(String,Type)] deriving Eq
 
 instance Show Type where
   show HInt = "int"
@@ -12,6 +12,7 @@ instance Show Type where
   show HBool = "bool"
   show (Func tys ret) = "((" ++ intercalate "," (map show tys) ++ ")->" ++ show ret ++ ")"
   show (Structure names) = "{" ++ intercalate "," (map (\(nm,ty) -> nm ++ ":" ++ show ty) names) ++ "}"
+  show (Union names) =  "{" ++ intercalate "|" (map (\(nm,ty) -> nm ++ ":" ++ show ty) names) ++ "}"
 
 
 isNum HInt = True
@@ -30,7 +31,9 @@ data Expr = ILit Int |
             Lambda [(String,Type)] Type Expr |
             Access Expr String |
             StructLiteral [(String,Expr)] |
-            Cast Type Expr
+            Cast Type Expr |
+            Unionize Type String Expr |
+            Case Expr [(String,String,Type,Expr)] deriving Eq
 
 instance Show Expr where
   show (ILit x) = show x
@@ -46,6 +49,8 @@ instance Show Expr where
   show (Access ex prop) = "(" ++ show ex ++ ")." ++ prop
   show (StructLiteral exs) = "{" ++ intercalate ", " (map (\(nm,ex)->nm++"="++show ex) exs) ++ "}"
   show (Cast ty expr) = "cast<" ++ show ty ++ ">(" ++ show expr ++ ")"
+  show (Unionize ty nm expr) = "unionize<" ++ show ty ++ ">(" ++ nm ++ "=" ++ show expr ++ ")"
+  show (Case expr cases) = "case {" ++ show expr ++ "} of {" ++ concat (map (\(nm,cs,ty,ex) -> nm ++ ":(" ++ cs ++ ":" ++ show ty ++ ")=" ++ show ex ++ ";") cases) ++ "}"
 
 data BinOp = Add | Sub | Mul | Div | Equal | Inequal | Greater | Less | GrEqual | LEqual | And | Or deriving Eq
 
@@ -161,7 +166,25 @@ typeOf (Cast ty expr) =
     ty
   else
     error $ "Can't cast type " ++ show (typeOf expr) ++ " to " ++ show ty
-    
+typeOf (Unionize ty cs expr) =
+  case ty of
+    (Union types) -> case lookup cs types of
+        Nothing -> error $ "Union type " ++ cs ++ " is not a member of type " ++ show ty
+        (Just exty) ->
+          if typeOf expr == exty then
+            ty
+          else
+            error $ "Expected type (" ++ show exty
+    _ -> error "Can only unionize to union"
+typeOf (Case ex cases) =
+  case typeOf ex of
+    (Union types) ->
+      if length types /= length cases then
+        error "Number of cases must match number of union members"
+      else
+        let (_,_,_,first) = cases !! 0
+        in (foldl (\acc x -> if acc /= x then error "Different types in case branch" else acc) (typeOf first) [typeOf lst | (_,_,_,lst) <- cases])
+    bad -> error $ "Expected union for case but got type " ++ show bad
 typeOf (Var ow) = error $ "Variable " ++ ow ++ " undeclared"
 
 data Declaration =

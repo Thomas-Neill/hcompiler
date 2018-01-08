@@ -244,6 +244,8 @@ htoll H.HFloat = float
 htoll (H.Func args ret) = funcType
 htoll (H.Structure props) =
   pointerto $ StructureType False $ (map (htoll . snd) props)
+htoll (H.Union _) =
+  pointerto $ StructureType False $ [i32,voidptr]
 
 --instead of the function objects we pass around, this is the actual LLVM function pointer type
 funcPtrType :: H.Type -> Type

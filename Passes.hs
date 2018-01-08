@@ -1,8 +1,8 @@
 module Passes where
-import Debug.Trace
 import AST
 import Util
 import Control.Monad.State
+import Data.Maybe
 
 passRecurseE :: (Expr -> Expr) -> Expr -> Expr
 passRecurseE p (Binary b l r) = Binary b (p l) (p r)
@@ -12,6 +12,9 @@ passRecurseE p (Call f args) = Call (p f) (map p args)
 passRecurseE p (Lambda args ty ret) = Lambda args ty (p ret)
 passRecurseE p (Access ex prop) = Access (p ex) prop
 passRecurseE p (StructLiteral exs) = StructLiteral $ [(n,p ex) | (n,ex) <- exs]
+passRecurseE p (Cast ty ex) = Cast ty (p ex)
+passRecurseE p (Unionize ty nm ex) = Unionize ty nm (p ex)
+passRecurseE p (Case ex exs) = Case (p ex) [(a,b,c,p e) | (a,b,c,e) <- exs]
 passRecurseE p x = x
 
 typeVars :: [[(String,Type)]] -> Expr -> Expr
@@ -22,6 +25,8 @@ typeVars st (Let pre e) =
     pre' = [(n,typeVars st ex) | (n,ex) <- pre]
     in Let pre' (typeVars ([(n,typeOf ex) | (n,ex) <- pre']:st) e)
 typeVars st (Lambda args ty ret) = Lambda args ty (typeVars (args:st) ret)
+typeVars st (Case ex exs) =
+  Case (typeVars st ex) [(n,cs,ty,typeVars ([(n,ty)]:st) e) | (n,cs,ty,e) <- exs]
 typeVars st e = passRecurseE (typeVars st) e
 
 removeLambdas decls = evalState removeLambdas' 0

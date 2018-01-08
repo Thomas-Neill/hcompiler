@@ -20,7 +20,7 @@ boolit = choice [
 pad :: Parser a -> Parser a
 pad p = spaces *> p <* spaces
 
-varChar = oneOf "qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCCVBNM"
+varChar = oneOf $ ['a'..'z'] ++ ['A'..'Z']
 
 argsTypes = char '(' *> (((,) <$> (pad $ many1 varChar) <*> (char ':' *> pad typ)) `sepBy` char ',') <* char ')'
 
@@ -32,9 +32,13 @@ typ = choice [
     string "bool" *> pure HBool,
     Func <$> (char '(' *> spaces *> char '(' *> spaces *> typ `sepBy` (pad $ char ',')) <*>
              (spaces *> char ')' *> spaces *> string "->" *> spaces *> typ <* spaces <* char ')'),
-    Structure <$> (char '{' *> spaces *>
-      ((,) <$> (many varChar) <*> (spaces *> char ':' *> spaces *> typ))
+    Structure <$> try (char '{' *> spaces *>
+      ((,) <$> (many1 varChar) <*> (spaces *> char ':' *> spaces *> typ))
         `sepBy` (pad $ char ',')
+      <* spaces <* char '}'),
+    Union <$> (char '{' *> spaces *>
+      ((,) <$> (many1 varChar) <*> (spaces *> char ':' *> spaces *> typ))
+        `sepBy` (pad $ char '|')
       <* spaces <* char '}')
   ]
 
@@ -52,7 +56,7 @@ primary = do
   val <- primary'
   foldl (\acc x-> x acc) val <$> (many $
     choice [
-      (\prop acc -> Access acc prop) <$> (char '.' *> many varChar),
+      (\prop acc -> Access acc prop) <$> (char '.' *> many1 varChar),
       (\args acc -> Call acc args) <$> (char '(' *> (expr `sepBy` (pad $ char ',')) <* char ')')
     ])
 
@@ -63,7 +67,7 @@ lambda = Lambda <$>
 
 struct = StructLiteral <$>
   (char '{' *> spaces *>
-    ((,) <$> (many varChar) <*> (spaces *> char '=' *> spaces *> expr))
+    ((,) <$> (many1 varChar) <*> (spaces *> char '=' *> spaces *> expr))
       `sepBy` (pad $ char ',')
    <* spaces <* char '}')
 
@@ -80,7 +84,18 @@ let' = Let <$> (try (string "let") *> spaces *> char '{' *> assignment `sepBy` c
 cast = Cast <$> (try (string "cast<") *> spaces *> typ) <*>
                 (char '>' *> spaces *> char '(' *> expr <* char ')')
 
-special = pad $ choice [if',let',cast,primary]
+unionize = Unionize <$> (try (string "unionize<") *> spaces *> typ) <*>
+                (char '>' *> spaces *> char '(' *> spaces *> many1 varChar) <*>
+                (spaces *> char '=' *> expr <* char ')')
+
+case' = Case <$> (try (string "case") *> spaces *> char '{' *> expr) <*>
+          (char '}' *> spaces *> string "of" *> spaces *> char '{' *> spaces *>
+            many1 ((,,,) <$> (many1 varChar) <*>
+              (spaces *> string ":" *> spaces *> char '(' *> spaces *> many1 varChar) <*>
+              (spaces *> char ':' *> spaces *> typ) <*>
+              (spaces *> char ')' *> spaces *> char '=' *> expr <* char ';' <* spaces)) <* spaces <* char '}')
+
+special = pad $ choice [if',let',cast,unionize,case',primary]
 
 mkBinLevel :: Parser Expr -> [(String,BinOp)] -> Parser Expr
 mkBinLevel prev opmap = prev `chainl1` op
