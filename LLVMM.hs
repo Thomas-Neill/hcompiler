@@ -198,6 +198,11 @@ malloc' ty mult = do
 
 malloc ty = malloc' ty (constint 1)
 
+pointerize ty val = do
+  body <- malloc (pointerReferent ty)
+  store body val
+  return body
+
 bitcast ptr ty = ins ty $ BitCast ptr ty []
 
 free ptr = do
@@ -238,9 +243,9 @@ switch cond dests = do
 funcType = pointerto $ StructureType False $ [voidptr,i8,pointerto voidptr]
 
 htoll :: H.Type -> Type
-htoll H.HBool = i1
-htoll H.HInt = i32
-htoll H.HFloat = float
+htoll H.HBool = pointerto i1
+htoll H.HInt = pointerto i32
+htoll H.HFloat = pointerto float
 htoll (H.Func args ret) = funcType
 htoll (H.Structure props) =
   pointerto $ StructureType False $ (map (htoll . snd) props)
@@ -249,7 +254,7 @@ htoll (H.Union _) =
 
 --instead of the function objects we pass around, this is the actual LLVM function pointer type
 funcPtrType :: H.Type -> Type
-funcPtrType (H.Func args ret) = funcNargs (htoll ret) (length args)
+funcPtrType (H.Func args ret) = pointerto $ FunctionType (htoll ret) (map htoll args) False
 
 funcNargs ret nargs = pointerto $ FunctionType ret (replicate nargs voidptr) False
 

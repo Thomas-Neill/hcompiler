@@ -14,9 +14,9 @@ import qualified LLVM.AST.Constant as C
 import qualified LLVM.AST.FloatingPointPredicate as FP --TODO: refactor all llvm imports into llvmm
 
 exprCodegen :: H.Expr -> Codegen Operand
-exprCodegen (H.ILit i) = return $ constint i
-exprCodegen (H.FLit f) = return $ constf f
-exprCodegen (H.BLit b) = return $ constb b
+exprCodegen (H.ILit i) = pointerize (pointerto i32) (constint i)
+exprCodegen (H.FLit f) = pointerize (pointerto float) (constf f)
+exprCodegen (H.BLit b) = pointerize (pointerto i1) (constb b)
 exprCodegen (H.TypedVar _ v) = find v
 exprCodegen whole@(H.If c t e) = do
   let rt = H.typeOf whole --resulting type
@@ -68,11 +68,7 @@ exprCodegen whole@(H.Call func args) = do
   let (H.Func arglist _) = H.typeOf func
       twhole = H.typeOf whole
   func' <- exprCodegen func
-  args' <- flip mapM args $ \arg -> do
-    arg' <- exprCodegen arg
-    storage <- malloc (htoll $ H.typeOf arg)
-    store storage arg'
-    bitcast storage voidptr
+  args' <- mapM (exprCodegen >=> flip bitcast (pointerto i8)) args
   if length args /= length arglist then do
       struct <- malloc (pointerReferent $ funcType)
       funcptrloc <- gep' (pointerto voidptr) struct [0,0]
@@ -125,11 +121,11 @@ exprCodegen whole@(H.Call func args) = do
       useBlock done
       phi (htoll twhole) (zip vals targets)
 
-exprCodegen (H.Binary op l r) = do
-  l' <- exprCodegen l
-  r' <- exprCodegen r
+exprCodegen whole@(H.Binary op l r) = do
+  l' <- exprCodegen l >>= load
+  r' <- exprCodegen r >>= load
   let lt = H.typeOf l
-  if H.isMath op then
+  val <- if H.isMath op then
     if lt == H.HInt then
       case op of
         H.Add -> iadd l' r'
@@ -171,19 +167,21 @@ exprCodegen (H.Binary op l r) = do
           bitand l' r'
         else
           bitor l' r'
+  pointerize (htoll $ H.typeOf whole) val
 
-exprCodegen (H.Cast ty expr) = do
+exprCodegen whole@(H.Cast ty expr) = do
   if ty == H.typeOf expr then
     exprCodegen expr
   else do
-    case H.typeOf expr of
+    val <- case H.typeOf expr of
       H.HBool -> case ty of
-          H.HInt -> exprCodegen expr >>= booltoint
+          H.HInt -> exprCodegen expr >>= load >>= booltoint
       H.HInt -> case ty of
-        H.HFloat -> exprCodegen expr >>= inttofloat
+        H.HFloat -> exprCodegen expr >>= load >>= inttofloat
         H.HBool -> exprCodegen (H.Binary H.Equal expr (H.ILit 0))
       H.HFloat -> case ty of
-        H.HInt -> exprCodegen expr >>= floattoint
+        H.HInt -> exprCodegen expr >>= load >>= floattoint
+    pointerize (htoll $ H.typeOf whole) val
 
 exprCodegen (H.Unionize ty cs expr) = do
   let
@@ -228,7 +226,7 @@ declareGlobals decls = do
 
 declCodegen :: H.Declaration -> LLVMM ()
 declCodegen (H.FuncDef name args retu expr) = do
-    let glb = genFunction (htoll $ H.typeOf expr) (strtoname name) [(voidptr,strtoname name) | (name,ty) <- args]
+    let glb = genFunction (htoll $ H.typeOf expr) (strtoname name) [(htoll ty,strtoname name) | (name,ty) <- args]
     globs <- gets globals
     let globs' = map (\(name,operand) -> (,) name $ do
         struct <- malloc (pointerReferent $ funcType)
@@ -245,10 +243,8 @@ declCodegen (H.FuncDef name args retu expr) = do
       do
         new <- newBlock
         useBlock new
-        names <- flip mapM args $ \(name,ty) -> do
-          ptr' <- bitcast (local voidptr $ strtoname name) (pointerto $ htoll ty)
-          val <- load ptr'
-          return (name,return val)
+        let
+          names = map (\(name,ty) -> (name,return $ local (htoll ty) $ strtoname name)) args
         pushScope $ globs' ++ names
         result <- exprCodegen expr
         ret result)
