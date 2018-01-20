@@ -1,0 +1,8 @@
+derive(x:((float)->float),y:float) -> float = (x(y + 0.001) - x(y)) * 1000.0;
+
+go() -> int =
+  let {
+    fprime = derive({lambda(x:float) -> float = x*x})
+  } in {
+    cast<int>(fprime(10.0) + fprime(30.0))
+  };

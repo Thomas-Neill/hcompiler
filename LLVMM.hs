@@ -187,29 +187,41 @@ gep' ty add indices = gep ty add (map constint indices)
 
 alloca ty = ins (pointerto ty) $ Alloca ty Nothing 0 []
 
-malloc' ty mult = do
+alloc' ty mult = do
   sz <- gep' (pointerto ty) (ConstantOperand $ C.Null $ pointerto ty) [1]
   size <- ins i32 $ PtrToInt sz i32 []
   size' <- imul size mult
-  ptr <- call (ConstantOperand $ C.GlobalReference mallocType (strtoname "malloc")) [size']
+  ptr <- call (ConstantOperand $ C.GlobalReference allocType (strtoname "alloc")) [size']
   bitcast ptr (pointerto ty)
   where
-    mallocType = pointerto $ FunctionType (voidptr) [i32] False
+    allocType = pointerto $ FunctionType voidptr [i32] False
 
-malloc ty = malloc' ty (constint 1)
+alloc ty = alloc' ty (constint 1)
 
 pointerize ty val = do
-  body <- malloc (pointerReferent ty)
+  body <- alloc (pointerReferent ty)
   store body val
   return body
 
-bitcast ptr ty = ins ty $ BitCast ptr ty []
+alloc_push =
+  let
+    ty = pointerto $ FunctionType VoidType [] False
+  in docall (ConstantOperand $ C.GlobalReference ty $ strtoname "alloc_push") []
 
-free ptr = do
-  ptr' <- bitcast ptr voidptr
-  docall (ConstantOperand $ C.GlobalReference freeType $ strtoname "free") [ptr']
-  where
-    freeType = pointerto $ FunctionType VoidType [voidptr] False
+alloc_depends dependr depende = do
+  let
+    ty = pointerto $ FunctionType VoidType [voidptr,voidptr] False
+  depr' <- bitcast dependr voidptr
+  depe' <- bitcast depende voidptr
+  docall (ConstantOperand $ C.GlobalReference ty $ strtoname "alloc_depends") [depr',depe']
+
+alloc_pop_except rt = do
+  let
+    ty = pointerto $ FunctionType VoidType [voidptr] False
+  rt' <- bitcast rt voidptr
+  docall (ConstantOperand $ C.GlobalReference ty $ strtoname "alloc_pop_except") [rt']
+
+bitcast ptr ty = ins ty $ BitCast ptr ty []
 
 load add = ins (pointerReferent $ inferType add) $ Load False add Nothing 0 []
 store add val = do_ $ Store False add val Nothing 0 []
@@ -270,7 +282,15 @@ inferType (ConstantOperand c) = case c of
 
 requiredDefns = do
   let
-    mallocGlobal = (genFunction (voidptr) (strtoname "malloc") [(i32,strtoname "size")])
-    freeGlobal = (genFunction VoidType (strtoname "free") [(voidptr,strtoname "target")])
+    mallocGlobal = genFunction voidptr (strtoname "malloc") [(i32,strtoname "size")]
+    freeGlobal = genFunction VoidType (strtoname "free") [(voidptr,strtoname "target")]
+    allocPushGlobal = genFunction VoidType (strtoname "alloc_push") []
+    allocGlobal = genFunction voidptr (strtoname "alloc") [(i32,strtoname "size")]
+    allocDependsGlobal = genFunction VoidType (strtoname "alloc_depends") [(voidptr,strtoname "depender"),(voidptr,strtoname "dependee")]
+    allocPopExceptGlobal = genFunction VoidType (strtoname "alloc_pop_except") [(voidptr,strtoname "return")]
   addGlobal $ GlobalDefinition mallocGlobal
   addGlobal $ GlobalDefinition freeGlobal
+  addGlobal $ GlobalDefinition allocPushGlobal
+  addGlobal $ GlobalDefinition allocGlobal
+  addGlobal $ GlobalDefinition allocDependsGlobal
+  addGlobal $ GlobalDefinition allocPopExceptGlobal

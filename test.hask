@@ -11,4 +11,4 @@ unwrap(bar:{nil:{}|x:int}) -> int =
     x:(x:int) = x;
 };
 
-main() -> int = unwrap(safeadd(null())) + unwrap(safeadd(wrap(20)));
+go() -> int = unwrap(safeadd(null())) + unwrap(safeadd(wrap(20)));

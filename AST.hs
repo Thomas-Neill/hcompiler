@@ -130,7 +130,7 @@ typeOf (If c l r) =
         lt
 typeOf (Let es e) = (foldl1 seq $ fmap (typeOf . snd) es) `seq` typeOf e
 typeOf (TypedVar t _) = t
-typeOf (Call f args) =
+typeOf w@(Call f args) =
   let
     tf = typeOf f
     ta = map typeOf args

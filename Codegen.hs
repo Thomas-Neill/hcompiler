@@ -25,7 +25,7 @@ exprCodegen whole@(H.If c t e) = do
   else' <- newBlock
   done <- newBlock
 
-  c' <- exprCodegen c
+  c' <- exprCodegen c >>= load
   cbr c' then' else'
 
   useBlock then'
@@ -51,11 +51,12 @@ exprCodegen (H.Let es e) = do
   return e'
 
 exprCodegen whole@(H.StructLiteral props) = do
-  struct <- malloc (pointerReferent $ htoll $ H.typeOf whole)
+  struct <- alloc (pointerReferent $ htoll $ H.typeOf whole)
   flip mapM_ (zip props [0..]) $ \((_,ex),n) -> do
     ex' <- exprCodegen ex
     ptr <- gep' (pointerto $ htoll $ H.typeOf ex) struct [0,n]
     store ptr ex'
+    alloc_depends struct ex'
   return struct
 
 exprCodegen w@(H.Access struct prop) = do
@@ -70,7 +71,7 @@ exprCodegen whole@(H.Call func args) = do
   func' <- exprCodegen func
   args' <- mapM (exprCodegen >=> flip bitcast (pointerto i8)) args
   if length args /= length arglist then do
-      struct <- malloc (pointerReferent $ funcType)
+      struct <- alloc (pointerReferent $ funcType)
       funcptrloc <- gep' (pointerto voidptr) struct [0,0]
       funcptr <- gep' (pointerto voidptr) func' [0,0] >>= load
       --copy function pointer
@@ -81,34 +82,37 @@ exprCodegen whole@(H.Call func args) = do
       store ncurryloc ncurry'
       ncurry'' <- toi32 ncurry'
       --calc new curried args and store
-      curries <- malloc' voidptr ncurry''
+      curries <- alloc' voidptr ncurry''
       curriesloc <- gep' (pointerto $ pointerto voidptr) struct [0,2]
       store curriesloc curries
+      alloc_depends struct curries
       --get curry pointer
       oldCurries <- gep' (pointerto $ pointerto voidptr) func' [0,2] >>= load
-      dests <- mapM (const newBlock) [0..1]
+      dests <- mapM (const newBlock) [0..15]
       done <- newBlock
-      switch ncurry (zip (map (C.Int 8) [0..1]) dests) --based on value of ncurry, we load n old args before starting new ones
+      switch ncurry (zip (map (C.Int 8) [0..15]) dests) --based on value of ncurry, we load n old args before starting new ones
       flip mapM_ (zip dests [0..15]) $ \(dest,ncurry) -> do
         useBlock dest
         flip mapM_ [0..ncurry-1] $ \ind -> do
           val <- gep' (pointerto voidptr) oldCurries [ind] >>= load
           loc <- gep' (pointerto voidptr) curries [ind]
           store loc val
+          alloc_depends struct val
           --copy old curries to new location
         flip mapM_ [0..length args - 1] $ \ind -> do
           loc <- gep' (pointerto voidptr) curries [ind + ncurry]
           store loc (args' !! ind)
+          alloc_depends struct (args' !! ind)
           --copy new curries
-          br done
+        br done
       useBlock done
       return struct
     else do
-      targets <- mapM (const newBlock) [0..1]
+      targets <- mapM (const newBlock) [0..15]
       done <- newBlock
       ncurry <- gep' (pointerto i8) func' [0,1] >>= load
-      switch ncurry (zip (map (C.Int 8) [0..1]) targets)
-      vals <- flip mapM (zip targets [0..1]) $ \(target,ncurry) -> do
+      switch ncurry (zip (map (C.Int 8) [0..15]) targets)
+      vals <- flip mapM (zip targets [0..15]) $ \(target,ncurry) -> do
         useBlock target
         funcptr <- gep' (pointerto voidptr) func' [0,0] >>= load
         funcptr' <- bitcast funcptr (funcNargs (htoll twhole) (ncurry + length args))
@@ -187,13 +191,13 @@ exprCodegen (H.Unionize ty cs expr) = do
   let
     (H.Union css) = ty
     index = fromJust $ cs `L.elemIndex` (map fst css)
-  struct <- malloc (pointerReferent $ htoll ty)
+  struct <- alloc (pointerReferent $ htoll ty)
   indexLoc <- gep' (pointerto i32) struct [0,0]
   store indexLoc (constint index)
   valLoc <- gep' (pointerto voidptr) struct [0,1]
-  val <- malloc (htoll $ H.typeOf expr)
-  exprCodegen expr >>= store val
-  bitcast val voidptr >>= store valLoc
+  ex' <- exprCodegen expr
+  bitcast ex' voidptr >>= store valLoc
+  alloc_depends struct ex'
   return struct
 
 exprCodegen whole@(H.Case ex cases) = do
@@ -204,7 +208,7 @@ exprCodegen whole@(H.Case ex cases) = do
   switch ty (zip (map (C.Int 32) [0..]) caseBlocks)
   phis <- flip mapM (zip caseBlocks cases ) $ \(blk,(nm,_,ty,ex)) -> do
     useBlock blk
-    val <- gep' (pointerto voidptr) ex' [0,1] >>= load >>= flip bitcast (pointerto $ htoll ty) >>= load
+    val <- gep' (pointerto voidptr) ex' [0,1] >>= load >>= flip bitcast (htoll ty)
     pushScope [(nm,return val)]
     ex' <- exprCodegen ex
     popScope
@@ -213,9 +217,6 @@ exprCodegen whole@(H.Case ex cases) = do
     return (ex',blk')
   useBlock done
   phi (htoll $ H.typeOf whole) phis
-
-
-
 
 declareGlobals :: [(String,H.Type)] -> LLVMM ()
 declareGlobals decls = do
@@ -229,7 +230,7 @@ declCodegen (H.FuncDef name args retu expr) = do
     let glb = genFunction (htoll $ H.typeOf expr) (strtoname name) [(htoll ty,strtoname name) | (name,ty) <- args]
     globs <- gets globals
     let globs' = map (\(name,operand) -> (,) name $ do
-        struct <- malloc (pointerReferent $ funcType)
+        struct <- alloc (pointerReferent $ funcType)
         op' <- bitcast operand voidptr
         fntarget <- gep' (pointerto voidptr) struct [0,0]
         store fntarget op'
@@ -243,10 +244,12 @@ declCodegen (H.FuncDef name args retu expr) = do
       do
         new <- newBlock
         useBlock new
+        alloc_push
         let
           names = map (\(name,ty) -> (name,return $ local (htoll ty) $ strtoname name)) args
         pushScope $ globs' ++ names
         result <- exprCodegen expr
+        alloc_pop_except result
         ret result)
 declCodegen (H.Extern name ty') = do
   addGlobal $ GlobalDefinition  $ case ty' of
