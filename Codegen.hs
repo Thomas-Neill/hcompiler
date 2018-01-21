@@ -221,13 +221,13 @@ exprCodegen whole@(H.Case ex cases) = do
 declareGlobals :: [(String,H.Type)] -> LLVMM ()
 declareGlobals decls = do
   mapM_ defineGlobal
-    [(name,ConstantOperand (C.GlobalReference (funcPtrType ty) (strtoname name)))
+    [(name,ConstantOperand (C.GlobalReference (funcPtrType ty) (strtoname $ "hask__" ++ name)))
       | (name,ty) <- decls]
   requiredDefns
 
 declCodegen :: H.Declaration -> LLVMM ()
 declCodegen (H.FuncDef name args retu expr) = do
-    let glb = genFunction (htoll $ H.typeOf expr) (strtoname name) [(htoll ty,strtoname name) | (name,ty) <- args]
+    let glb = genFunction (htoll $ H.typeOf expr) (strtoname $ "hask__" ++ name) [(htoll ty,strtoname name) | (name,ty) <- args]
     globs <- gets globals
     let globs' = map (\(name,operand) -> (,) name $ do
         struct <- alloc (pointerReferent $ funcType)
@@ -252,7 +252,20 @@ declCodegen (H.FuncDef name args retu expr) = do
         alloc_pop_except result
         ret result)
 declCodegen (H.Extern name ty') = do
-  addGlobal $ GlobalDefinition  $ case ty' of
-    (H.Func args retrn) -> genFunction (htoll retrn) (strtoname name)
-      (zipWith (,) (map htoll args) (map (\x -> strtoname $ replicate x 'a') [1..]))
-    ty -> genExternVar (strtoname name) (htoll ty)
+   case ty' of
+    (H.Func args retrn) -> do
+      let glb1 = genFunction (htoll retrn) (strtoname $ "hask__" ++ name) (zipWith (,) (map htoll args) (map (\x -> strtoname $ replicate x 'a') [1..]))
+          glb2 = genFunction (htoc retrn) (strtoname $ name) (zipWith (,) (map htoc args) (map (\x -> strtoname $ replicate x 'a') [1..]))
+      addGlobal $ GlobalDefinition glb2
+      runCodegen glb1 $ do
+          newBlock >>= useBlock
+          alloc_push
+          newargs <- flip mapM (zip args [0..]) $ \(ty,n) -> do
+            let name = local (htoll ty) $ strtoname (replicate (n+1) 'a')
+            llvaltoc ty name
+          let fn = ConstantOperand (C.GlobalReference (cfuncPtrType ty') (strtoname name))
+          ret'' <- call fn newargs
+          ret' <- cvaltoll retrn ret''
+          alloc_pop_except ret'
+          ret ret'
+    ty -> addGlobal $ GlobalDefinition $ genExternVar (strtoname name) (htoll ty)
