@@ -24,8 +24,7 @@ data Expr = ILit Int |
             BLit Bool |
             Binary BinOp Expr Expr |
             If Expr Expr Expr |
-            Var String |
-            TypedVar Type String |
+            Var (Maybe Type) String |
             Let [(String,Expr)] Expr |
             Call Expr [Expr] |
             Lambda [(String,Type)] Type Expr |
@@ -41,8 +40,8 @@ instance Show Expr where
   show (BLit b) = show b
   show (Binary op l r) = show l ++ show op ++ show r
   show (If c l r) = "if {" ++ show c ++ "} then {" ++ show l ++ "} else {" ++ show r ++ "}"
-  show (Var s) = s
-  show (TypedVar ty s) = s ++ ":" ++ show ty
+  show (Var Nothing s) = s
+  show (Var (Just ty) s) = s ++ ":" ++ show ty
   show (Let pre e) = "let {" ++ intercalate ", " (map show pre) ++ "} in {" ++ show e ++ "}"
   show (Call e args) = "(" ++ show e ++ ")(" ++ intercalate ", " (map show args) ++ ")"
   show (Lambda args ty ex) = "{lambda(" ++ intercalate ", " (map (\(nm,ty)->nm ++ ":" ++ show ty) args) ++ ")->" ++ show ty ++ "=" ++ show ex ++ "}"
@@ -129,7 +128,8 @@ typeOf (If c l r) =
       else
         lt
 typeOf (Let es e) = (foldl1 seq $ fmap (typeOf . snd) es) `seq` typeOf e
-typeOf (TypedVar t _) = t
+typeOf (Var (Just t) _) = t
+typeOf (Var Nothing ow) = error $ "Variable " ++ ow ++ " undeclared"
 typeOf w@(Call f args) =
   let
     tf = typeOf f
@@ -185,7 +185,7 @@ typeOf (Case ex cases) =
         let (_,_,_,first) = cases !! 0
         in (foldl (\acc x -> if acc /= x then error "Different types in case branch" else acc) (typeOf first) [typeOf lst | (_,_,_,lst) <- cases])
     bad -> error $ "Expected union for case but got type " ++ show bad
-typeOf (Var ow) = error $ "Variable " ++ ow ++ " undeclared"
+
 
 data Declaration =
   FuncDef String [(String,Type)] Type Expr |

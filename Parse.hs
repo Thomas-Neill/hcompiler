@@ -24,7 +24,7 @@ varChar = oneOf $ ['a'..'z'] ++ ['A'..'Z']
 
 argsTypes = char '(' *> (((,) <$> (pad $ many1 varChar) <*> (char ':' *> pad typ)) `sepBy` char ',') <* char ')'
 
-var = Var <$> many1 varChar
+var = Var Nothing <$> many1 varChar
 
 typ = choice [
     string "int" *> pure HInt,

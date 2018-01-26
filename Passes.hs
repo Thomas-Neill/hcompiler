@@ -18,8 +18,8 @@ passRecurseE p (Case ex exs) = Case (p ex) [(a,b,c,p e) | (a,b,c,e) <- exs]
 passRecurseE p x = x
 
 typeVars :: [[(String,Type)]] -> Expr -> Expr
-typeVars st (TypedVar ty nm) = maybe (TypedVar ty nm) (\ty' -> TypedVar ty' nm) (resolve' st nm)
-typeVars st (Var s) = maybe (Var s) (\ty -> TypedVar ty s) (resolve' st s)
+typeVars st (Var Nothing s) = Var (resolve' st s) s
+typeVars st (Var old nm) = Var (maybe old Just (resolve' st nm)) nm
 typeVars st (Let pre e) =
   let
     pre' = [(n,typeVars st ex) | (n,ex) <- pre]
@@ -55,8 +55,8 @@ removeLambdas decls = evalState removeLambdas' 0
           usedVars ex
         usedVars (StructLiteral props) =
           concat $ (map (usedVars . snd) props)
-        usedVars (TypedVar ty name) = [(name,ty)]
-        usedVars (Var _) = error "Oops, missed a var"
+        usedVars (Var (Just ty) name) = [(name,ty)]
+        usedVars (Var Nothing _) = error "Oops, missed a var"
         usedVars _ = []
 
     extractLambdas :: Declaration -> State Int [Declaration]
@@ -132,7 +132,7 @@ removeLambdas decls = evalState removeLambdas' 0
       counter <- get
       put $ counter + 1
       let clses = closures whole
-      return $ Call (Var $ "lambda__" ++ show counter) (map (\(nm,ty) -> TypedVar ty nm) clses)
+      return $ Call (Var Nothing $ "lambda__" ++ show counter) (map (\(nm,ty) -> Var (Just ty) nm) clses)
     replaceLambdasE x = return x
 
 typeGlobals decls = map typeGlobals' decls

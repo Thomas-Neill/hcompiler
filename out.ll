@@ -13,49 +13,20 @@ declare void @alloc_depends(i8*, i8*)
 
 declare void @alloc_pop_except(i8*)
 
-declare float @sine(float)
-
-define float* @hask__sine(float* %a) {
-  call void @alloc_push()
-  %1 = load float, float* %a
-  %2 = call float @sine(float %1)
-  %3 = call i8* @alloc(i32 ptrtoint (float* getelementptr (float, float* null, i32 1) to i32))
-  %4 = bitcast i8* %3 to float*
-  store float %2, float* %4
-  %5 = bitcast float* %4 to i8*
-  call void @alloc_pop_except(i8* %5)
-  ret float* %4
-}
-
-declare i32 @printb(i8)
-
-define i32* @hask__printb(i1* %a) {
-  call void @alloc_push()
-  %1 = load i1, i1* %a
-  %2 = zext i1 %1 to i8
-  %3 = call i32 @printb(i8 %2)
-  %4 = call i8* @alloc(i32 ptrtoint (i32* getelementptr (i32, i32* null, i32 1) to i32))
-  %5 = bitcast i8* %4 to i32*
-  store i32 %3, i32* %5
-  %6 = bitcast i32* %5 to i8*
-  call void @alloc_pop_except(i8* %6)
-  ret i32* %5
-}
-
 define i32* @hask__main() {
   call void @alloc_push()
   %1 = call i8* @alloc(i32 ptrtoint ({ i8*, i8, i8** }* getelementptr ({ i8*, i8, i8** }, { i8*, i8, i8** }* null, i32 1) to i32))
   %2 = bitcast i8* %1 to { i8*, i8, i8** }*
   %3 = getelementptr { i8*, i8, i8** }, { i8*, i8, i8** }* %2, i32 0, i32 0
-  store i8* bitcast (i32* (i1*)* @hask__printb to i8*), i8** %3
+  store i8* bitcast (i32* (i32*)* @hask__g to i8*), i8** %3
   %4 = getelementptr { i8*, i8, i8** }, { i8*, i8, i8** }* %2, i32 0, i32 1
   store i8 0, i8* %4
   %5 = getelementptr { i8*, i8, i8** }, { i8*, i8, i8** }* %2, i32 0, i32 2
   store i8** null, i8*** %5
-  %6 = call i8* @alloc(i32 ptrtoint (i1* getelementptr (i1, i1* null, i32 1) to i32))
-  %7 = bitcast i8* %6 to i1*
-  store i1 true, i1* %7
-  %8 = bitcast i1* %7 to i8*
+  %6 = call i8* @alloc(i32 ptrtoint (i32* getelementptr (i32, i32* null, i32 1) to i32))
+  %7 = bitcast i8* %6 to i32*
+  store i32 10, i32* %7
+  %8 = bitcast i32* %7 to i8*
   %9 = getelementptr { i8*, i8, i8** }, { i8*, i8, i8** }* %2, i32 0, i32 1
   %10 = load i8, i8* %9
   switch i8 %10, label %366 [
@@ -469,4 +440,29 @@ define i32* @hask__main() {
 
 ; <label>:366:                                    ; preds = %0
   unreachable
+}
+
+define i32* @hask__g(i32* %a) {
+  call void @alloc_push()
+  %1 = load i32, i32* %a
+  %2 = call i8* @alloc(i32 ptrtoint (i32* getelementptr (i32, i32* null, i32 1) to i32))
+  %3 = bitcast i8* %2 to i32*
+  store i32 10, i32* %3
+  %4 = load i32, i32* %3
+  %5 = mul i32 %1, %4
+  %6 = call i8* @alloc(i32 ptrtoint (i32* getelementptr (i32, i32* null, i32 1) to i32))
+  %7 = bitcast i8* %6 to i32*
+  store i32 %5, i32* %7
+  %8 = load i32, i32* %7
+  %9 = call i8* @alloc(i32 ptrtoint (i32* getelementptr (i32, i32* null, i32 1) to i32))
+  %10 = bitcast i8* %9 to i32*
+  store i32 10, i32* %10
+  %11 = load i32, i32* %10
+  %12 = add i32 %8, %11
+  %13 = call i8* @alloc(i32 ptrtoint (i32* getelementptr (i32, i32* null, i32 1) to i32))
+  %14 = bitcast i8* %13 to i32*
+  store i32 %12, i32* %14
+  %15 = bitcast i32* %14 to i8*
+  call void @alloc_pop_except(i8* %15)
+  ret i32* %14
 }
