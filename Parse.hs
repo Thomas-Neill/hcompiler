@@ -27,9 +27,10 @@ argsTypes = char '(' *> (((,) <$> (pad $ many1 varChar) <*> (char ':' *> pad typ
 var = Var Nothing <$> many1 varChar
 
 typ = choice [
-    string "int" *> pure HInt,
-    string "float" *> pure HFloat,
-    string "bool" *> pure HBool,
+    try $ (string "int") *> pure HInt,
+    try $ (string "float") *> pure HFloat,
+    try $ (string "bool") *> pure HBool,
+    TypeVar Nothing <$> many1 varChar,
     Func <$> (char '(' *> spaces *> char '(' *> spaces *> typ `sepBy` (pad $ char ',')) <*>
              (spaces *> char ')' *> spaces *> string "->" *> spaces *> typ <* spaces <* char ')'),
     Structure <$> try (char '{' *> spaces *>
@@ -115,6 +116,9 @@ decl = pad $ choice [
     Extern <$>
       (try (string "extern") *> spaces1 *> many1 varChar) <*>
       (spaces *> char ':' *> spaces *> typ <* spaces),
+    TypeDef <$>
+      (try (string "type") *> spaces1 *> many1 varChar) <*>
+      (spaces *> char '=' *> spaces *> typ <* spaces),
     FuncDef <$>
       (many1 varChar) <*>
       (spaces *> argsTypes) <*>

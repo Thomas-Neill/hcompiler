@@ -60,13 +60,13 @@ exprCodegen whole@(H.StructLiteral props) = do
   return struct
 
 exprCodegen w@(H.Access struct prop) = do
-  let (H.Structure props) = H.typeOf struct
+  let (H.Structure props) = H.deAlias $ H.typeOf struct
   struct' <- exprCodegen struct
   ptr <- gep' (pointerto $ htoll $ H.typeOf w) struct' [0,fromJust $ prop `L.elemIndex` (map fst props)]
   load ptr
 
 exprCodegen whole@(H.Call func args) = do
-  let (H.Func arglist _) = H.typeOf func
+  let (H.Func arglist _) = H.deAlias $ H.typeOf func
       twhole = H.typeOf whole
   func' <- exprCodegen func
   args' <- mapM (exprCodegen >=> flip bitcast (pointerto i8)) args
@@ -177,7 +177,7 @@ exprCodegen whole@(H.Cast ty expr) = do
   if ty == H.typeOf expr then
     exprCodegen expr
   else do
-    val <- case H.typeOf expr of
+    val <- case H.deAlias $ H.typeOf expr of
       H.HBool -> case ty of
           H.HInt -> exprCodegen expr >>= load >>= booltoint
       H.HInt -> case ty of
@@ -189,7 +189,7 @@ exprCodegen whole@(H.Cast ty expr) = do
 
 exprCodegen (H.Unionize ty cs expr) = do
   let
-    (H.Union css) = ty
+    (H.Union css) = H.deAlias ty
     index = fromJust $ cs `L.elemIndex` (map fst css)
   struct <- alloc (pointerReferent $ htoll ty)
   indexLoc <- gep' (pointerto i32) struct [0,0]
@@ -252,7 +252,7 @@ declCodegen (H.FuncDef name args retu expr) = do
         alloc_pop_except result
         ret result)
 declCodegen (H.Extern name ty') = do
-   case ty' of
+   case H.deAlias $ ty' of
     (H.Func args retrn) -> do
       let glb1 = genFunction (htoll retrn) (strtoname $ "hask__" ++ name) (zipWith (,) (map htoll args) (map (\x -> strtoname $ replicate x 'a') [1..]))
           glb2 = genFunction (htoc retrn) (strtoname $ name) (zipWith (,) (map htoc args) (map (\x -> strtoname $ replicate x 'a') [1..]))

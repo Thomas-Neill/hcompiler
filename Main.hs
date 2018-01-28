@@ -9,6 +9,7 @@ import Data.Maybe
 import Passes
 import System.Environment
 import System.Exit
+import System.Process
 
 main = do
   args <- getArgs
@@ -20,11 +21,9 @@ main = do
     (Left err) -> die (show err)
     (Right ast'') -> do
       let ast = runPasses ast''
-      mapM_ print ast''
-      putStrLn "Passed: "
-      mapM_ print ast
       compile (workingMod $ execState
         (do
-          declareGlobals $ map typeofDecl ast
+          declareGlobals $ catMaybes $ map typeofDecl ast
           mapM_ declCodegen ast)
         (genCompilerState "???" "stdin")) "out.ll"
+      callCommand "clang-5.0 out.ll libh/*.c -lm"

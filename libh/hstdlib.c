@@ -1,5 +1,5 @@
 #include <math.h>
-
+#include <stdlib.h>
 float sine(float x) {
   return sinf(x);
 }

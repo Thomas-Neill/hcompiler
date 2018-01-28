@@ -4,7 +4,19 @@ import Util (commonArgs)
 import Data.List
 
 data Type = HInt | HFloat | HBool | Func [Type] Type |
-            Structure [(String,Type)] | Union [(String,Type)] deriving Eq
+            Structure [(String,Type)] | Union [(String,Type)] | TypeVar (Maybe Type) String
+
+instance Eq Type where
+  HInt == HInt = True
+  HFloat == HFloat = True
+  HBool == HBool = True
+  (Func tys1 ty1) == (Func tys2 ty2) = tys1 == tys2 && ty1 == ty2
+  (Structure tys1) == (Structure tys2) = map snd tys1 == map snd tys2 --order must be preserved, but names can differ
+  (Union tys1) == (Union tys2) = map snd tys1 == map snd tys2
+  (TypeVar _ nm1) == (TypeVar _ nm2) = nm1 == nm2
+  ty1 == (TypeVar (Just ty2) _) = ty1 == ty2
+  (TypeVar (Just ty1) _) == ty2 = ty1 == ty2
+  _ == _ = False
 
 instance Show Type where
   show HInt = "int"
@@ -13,11 +25,7 @@ instance Show Type where
   show (Func tys ret) = "((" ++ intercalate "," (map show tys) ++ ")->" ++ show ret ++ ")"
   show (Structure names) = "{" ++ intercalate "," (map (\(nm,ty) -> nm ++ ":" ++ show ty) names) ++ "}"
   show (Union names) =  "{" ++ intercalate "|" (map (\(nm,ty) -> nm ++ ":" ++ show ty) names) ++ "}"
-
-
-isNum HInt = True
-isNum HFloat = True
-isNum _ = False
+  show (TypeVar ty nm) = nm
 
 data Expr = ILit Int |
             FLit Float |
@@ -88,6 +96,9 @@ castable HFloat HInt = True
 castable HInt HFloat = True
 castable x y = x == y
 
+deAlias (TypeVar ty _) = fromJust ty
+deAlias x = x
+
 typeOf :: Expr -> Type
 typeOf (ILit _) = HInt
 typeOf (FLit _) = HFloat
@@ -99,13 +110,13 @@ typeOf (Binary op l r) =
       error "Can't compare different types"
     else
       if isMath op then
-        case lt of
+        case deAlias lt of
           HInt -> HInt
           HFloat -> HFloat
           lt -> error $ "Can't add type " ++ show lt
       else
         if isComp op then
-          case lt of
+          case deAlias lt of
             HInt -> HBool
             HFloat -> HBool
             HBool -> HBool
@@ -135,7 +146,7 @@ typeOf w@(Call f args) =
     tf = typeOf f
     ta = map typeOf args
   in
-    case tf of
+    case deAlias tf of
       (Func args ret) ->
         if args /= ta then
           if length args > length ta then
@@ -155,19 +166,19 @@ typeOf (Lambda args rettype expr) =
   else
     error "Lambda return disagrees with actual return."
 typeOf (Access expr label) =
-  case typeOf expr of
+  case deAlias $ typeOf expr of
     (Structure types) -> case lookup label types of
       Nothing -> error $ "Field" ++ label ++ "DNE"
       (Just x) -> x
     _ -> error $ "not a structure"
 typeOf (StructLiteral exs) = Structure $ map (\(nm,e) -> (nm,typeOf e)) exs
 typeOf (Cast ty expr) =
-  if castable ty (typeOf expr) then
+  if castable (deAlias ty) (deAlias $ typeOf expr) then
     ty
   else
     error $ "Can't cast type " ++ show (typeOf expr) ++ " to " ++ show ty
 typeOf (Unionize ty cs expr) =
-  case ty of
+  case deAlias ty of
     (Union types) -> case lookup cs types of
         Nothing -> error $ "Union type " ++ cs ++ " is not a member of type " ++ show ty
         (Just exty) ->
@@ -177,7 +188,7 @@ typeOf (Unionize ty cs expr) =
             error $ "Expected type (" ++ show exty
     _ -> error "Can only unionize to union"
 typeOf (Case ex cases) =
-  case typeOf ex of
+  case deAlias $ typeOf ex of
     (Union types) ->
       if length types /= length cases then
         error "Number of cases must match number of union members"
@@ -189,17 +200,20 @@ typeOf (Case ex cases) =
 
 data Declaration =
   FuncDef String [(String,Type)] Type Expr |
-  Extern String Type
+  Extern String Type |
+  TypeDef String Type
 
 instance Show Declaration where
   show (FuncDef nm args ret bod) =
     nm ++ "(" ++ intercalate " " (map (\(x,y) -> x ++ ":" ++ show y) args) ++
     ") -> " ++ show ret ++ " = " ++ show bod ++ ";"
   show (Extern nm ty) = "extern " ++ nm ++ " : " ++ show ty ++ ";"
+  show (TypeDef nm ty) = "type " ++ nm ++ " = " ++ show ty ++ ";"
 
-typeofDecl :: Declaration -> (String,Type)
-typeofDecl (FuncDef name tys ret result) = (name, Func (map snd tys) ret)
-typeofDecl (Extern nm ty) = (nm,ty)
+typeofDecl :: Declaration -> Maybe (String,Type)
+typeofDecl (FuncDef name tys ret result) = Just (name, Func (map snd tys) ret)
+typeofDecl (Extern nm ty) = Just (nm,ty)
+typeofDecl (TypeDef nm ty) = Nothing
 
 typeofDeclAct :: Declaration -> (String,Type)
 typeofDeclAct (FuncDef name tys ret result) =
@@ -217,3 +231,4 @@ validate decls = (foldl1 seq $ map val decls) `seq` decls
       if ret == typeOf result then 0 else
         error $ "Expected return of " ++ show ret ++ " , but got " ++ show (typeOf result)
     val (Extern _ _) = 0
+    val (TypeDef _ _) = 0

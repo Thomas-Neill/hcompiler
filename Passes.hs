@@ -3,7 +3,7 @@ import AST
 import Util
 import Control.Monad.State
 import Data.Maybe
-
+import Debug.Trace
 passRecurseE :: (Expr -> Expr) -> Expr -> Expr
 passRecurseE p (Binary b l r) = Binary b (p l) (p r)
 passRecurseE p (If a b c) = If (p a) (p b) (p c)
@@ -36,7 +36,7 @@ removeLambdas decls = evalState removeLambdas' 0
       newdefns <- fmap concat $ mapM extractLambdas decls
       put 0 --reset counter
       decls' <- mapM replaceLambdas decls
-      return $ typeGlobals $ newdefns ++ decls' --gotta type dem new lambders
+      return $ typeGlobals $ newdefns ++ decls' --gotta type the new lambdas
 
     closures :: Expr -> [(String,Type)]
     closures (Lambda args _ ex) =
@@ -137,7 +137,7 @@ removeLambdas decls = evalState removeLambdas' 0
 
 typeGlobals decls = map typeGlobals' decls
   where -- type global definitions
-    glbs = map typeofDecl decls
+    glbs = catMaybes $ map typeofDecl decls
     typeGlobals' (FuncDef name types ret expr) =
       FuncDef name types ret $ typeVars [glbs] expr
     typeGlobals' (Extern nm ty) = Extern nm ty
@@ -148,4 +148,31 @@ typeArgs decls = map typeArgs' decls
       FuncDef name types ret $ typeVars [types] expr
     typeArgs' (Extern nm ty) = Extern nm ty
 
-runPasses = validate . removeLambdas . typeArgs . typeGlobals
+typeAliases decls = catMaybes $ map typeAliases' decls
+  where
+    typeAlias ty = let
+      getTypeAliases (FuncDef _ _ _ _) = Nothing
+      getTypeAliases (Extern _ _) = Nothing
+      getTypeAliases (TypeDef nm ty) = Just (nm,ty)
+      typetbl = (catMaybes $ map getTypeAliases decls)
+      in
+        case ty of
+          HInt -> HInt
+          HBool -> HBool
+          (Func tys ty) -> Func (map typeAlias tys) (typeAlias ty)
+          (Structure tys) -> Structure [(nm,typeAlias ty)|(nm,ty)<-tys]
+          (Union tys) -> Union [(nm,typeAlias ty)|(nm,ty)<-tys]
+          (TypeVar Nothing nm) -> TypeVar (fmap typeAlias (lookup nm typetbl)) nm
+    typeAliases' (FuncDef name args ty ex) =
+      Just $ FuncDef name [(nm,typeAlias ty)|(nm,ty)<-args] (typeAlias ty) (typeAliasesE ex)
+    typeAliases' (Extern nm ty) = Just $ Extern nm ty
+    typeAliases' (TypeDef nm ty) = Nothing
+
+    typeAliasesE (Var (Just ty) nm) = Var (Just $ typeAlias ty) nm
+    typeAliasesE (Lambda args ret ex) = Lambda [(nm,typeAlias ty) | (nm,ty) <- args] (typeAlias ret) (typeAliasesE ex)
+    typeAliasesE (Cast ty ex) = Cast (typeAlias ty) (typeAliasesE ex)
+    typeAliasesE (Unionize ty nm ex) = Unionize (typeAlias ty) nm (typeAliasesE ex)
+    typeAliasesE (Case ex cases) = Case ex [(nm,cs,typeAlias ty,typeAliasesE ex) | (nm,cs,ty,ex) <- cases]
+    typeAliasesE ex = passRecurseE typeAliasesE ex
+
+runPasses = validate . removeLambdas . typeArgs . typeGlobals . typeAliases

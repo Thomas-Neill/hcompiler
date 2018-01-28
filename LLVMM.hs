@@ -119,7 +119,6 @@ newBlock = do
   name <- fresh
   modify $ \st -> st {blocks = blocks st ++ [(name,defaultBlockState)]}
   return name
-
 useBlock :: Name -> Codegen ()
 useBlock n = do
   modify $ \st -> st {currentBlock = n}
@@ -263,6 +262,7 @@ htoll (H.Structure props) =
   pointerto $ StructureType False $ (map (htoll . snd) props)
 htoll (H.Union _) =
   pointerto $ StructureType False $ [i32,voidptr]
+htoll (H.TypeVar (Just ty) _) = htoll ty
 
 htoc :: H.Type -> Type
 htoc H.HInt = i32
