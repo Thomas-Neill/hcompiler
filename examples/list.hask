@@ -5,9 +5,9 @@ null() -> list = unionize<list>(null={});
 cons(head:int,tail:list) -> list = unionize<list>(cons={head=head,tail=tail});
 
 sum(x:list) -> int =
-  case {x} of {
-    ignore:(null:{}) = 0;
-    node:(cons:node) = node.head + sum(node.tail);
+  case<list> {x} of {
+    ignore:null = 0;
+    node:cons = node.head + sum(node.tail);
 };
 
 main() -> int = sum(cons(1,cons(2,cons(3,null()))));

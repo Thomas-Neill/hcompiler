@@ -14,7 +14,7 @@ passRecurseE p (Access ex prop) = Access (p ex) prop
 passRecurseE p (StructLiteral exs) = StructLiteral $ [(n,p ex) | (n,ex) <- exs]
 passRecurseE p (Cast ty ex) = Cast ty (p ex)
 passRecurseE p (Unionize ty nm ex) = Unionize ty nm (p ex)
-passRecurseE p (Case ex exs) = Case (p ex) [(a,b,c,p e) | (a,b,c,e) <- exs]
+passRecurseE p (Case ty ex exs) = Case ty (p ex) [(a,b,p e) | (a,b,e) <- exs]
 passRecurseE p x = x
 
 typeVars :: [[(String,Type)]] -> Expr -> Expr
@@ -25,8 +25,11 @@ typeVars st (Let pre e) =
     pre' = [(n,typeVars st ex) | (n,ex) <- pre]
     in Let pre' (typeVars ([(n,typeOf ex) | (n,ex) <- pre']:st) e)
 typeVars st (Lambda args ty ret) = Lambda args ty (typeVars (args:st) ret)
-typeVars st (Case ex exs) =
-  Case (typeVars st ex) [(n,cs,ty,typeVars ([(n,ty)]:st) e) | (n,cs,ty,e) <- exs]
+typeVars st (Case ty ex exs) =
+  let
+    (Union typeMap) = deAlias ty
+    getType cs = fromJust $ lookup cs typeMap
+  in Case ty (typeVars st ex) [(n,cs,typeVars ([(n,getType cs)]:st) e) | (n,cs,e) <- exs]
 typeVars st e = passRecurseE (typeVars st) e
 
 removeLambdas decls = evalState removeLambdas' 0
@@ -172,7 +175,7 @@ typeAliases decls = catMaybes $ map typeAliases' decls
     typeAliasesE (Lambda args ret ex) = Lambda [(nm,typeAlias ty) | (nm,ty) <- args] (typeAlias ret) (typeAliasesE ex)
     typeAliasesE (Cast ty ex) = Cast (typeAlias ty) (typeAliasesE ex)
     typeAliasesE (Unionize ty nm ex) = Unionize (typeAlias ty) nm (typeAliasesE ex)
-    typeAliasesE (Case ex cases) = Case ex [(nm,cs,typeAlias ty,typeAliasesE ex) | (nm,cs,ty,ex) <- cases]
+    typeAliasesE (Case ty ex cases) = Case (typeAlias ty) ex [(nm,cs,typeAliasesE ex) | (nm,cs,ex) <- cases]
     typeAliasesE ex = passRecurseE typeAliasesE ex
 
 runPasses = validate . removeLambdas . typeArgs . typeGlobals . typeAliases

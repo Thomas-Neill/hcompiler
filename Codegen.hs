@@ -200,13 +200,15 @@ exprCodegen (H.Unionize ty cs expr) = do
   alloc_depends struct ex'
   return struct
 
-exprCodegen whole@(H.Case ex cases) = do
+exprCodegen whole@(H.Case ty' ex cases) = do
+  let (H.Union types) = H.deAlias ty'
   done <- newBlock
   caseBlocks <- mapM (const newBlock) cases
   ex' <- exprCodegen ex
   ty <- gep' (pointerto i32) ex' [0,0] >>= load
   switch ty (zip (map (C.Int 32) [0..]) caseBlocks)
-  phis <- flip mapM (zip caseBlocks cases ) $ \(blk,(nm,_,ty,ex)) -> do
+  phis <- flip mapM (zip caseBlocks cases ) $ \(blk,(nm,cs,ex)) -> do
+    let ty = fromJust $ lookup cs types
     useBlock blk
     val <- gep' (pointerto voidptr) ex' [0,1] >>= load >>= flip bitcast (htoll ty)
     pushScope [(nm,return val)]

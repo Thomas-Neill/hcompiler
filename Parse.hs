@@ -89,12 +89,12 @@ unionize = Unionize <$> (try (string "unionize<") *> spaces *> typ) <*>
                 (char '>' *> spaces *> char '(' *> spaces *> many1 varChar) <*>
                 (spaces *> char '=' *> expr <* char ')')
 
-case' = Case <$> (try (string "case") *> spaces *> char '{' *> expr) <*>
+case' = Case <$> (try (string "case") *> spaces *> char '<' *>  spaces *>typ) <*>
+          (char '>' *> spaces *> char '{' *> expr) <*>
           (char '}' *> spaces *> string "of" *> spaces *> char '{' *> spaces *>
-            many1 ((,,,) <$> (many1 varChar) <*>
-              (spaces *> string ":" *> spaces *> char '(' *> spaces *> many1 varChar) <*>
-              (spaces *> char ':' *> spaces *> typ) <*>
-              (spaces *> char ')' *> spaces *> char '=' *> expr <* char ';' <* spaces)) <* spaces <* char '}')
+            many1 ((,,) <$> (many1 varChar) <*>
+              (spaces *> string ":" *> spaces *> many1 varChar) <*>
+              (spaces *> char '=' *> expr <* char ';' <* spaces)) <* spaces <* char '}')
 
 special = pad $ choice [if',let',cast,unionize,case',primary]
 

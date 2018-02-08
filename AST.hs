@@ -40,7 +40,7 @@ data Expr = ILit Int |
             StructLiteral [(String,Expr)] |
             Cast Type Expr |
             Unionize Type String Expr |
-            Case Expr [(String,String,Type,Expr)] deriving Eq
+            Case Type Expr [(String,String,Expr)] deriving Eq
 
 instance Show Expr where
   show (ILit x) = show x
@@ -57,7 +57,7 @@ instance Show Expr where
   show (StructLiteral exs) = "{" ++ intercalate ", " (map (\(nm,ex)->nm++"="++show ex) exs) ++ "}"
   show (Cast ty expr) = "cast<" ++ show ty ++ ">(" ++ show expr ++ ")"
   show (Unionize ty nm expr) = "unionize<" ++ show ty ++ ">(" ++ nm ++ "=" ++ show expr ++ ")"
-  show (Case expr cases) = "case {" ++ show expr ++ "} of {" ++ concat (map (\(nm,cs,ty,ex) -> nm ++ ":(" ++ cs ++ ":" ++ show ty ++ ")=" ++ show ex ++ ";") cases) ++ "}"
+  show (Case ty expr cases) = "case<"++show ty++"> {" ++ show expr ++ "} of {" ++ concat (map (\(nm,cs,ex) -> nm ++ ":(" ++ cs ++ ")=" ++ show ex ++ ";") cases) ++ "}"
 
 data BinOp = Add | Sub | Mul | Div | Equal | Inequal | Greater | Less | GrEqual | LEqual | And | Or deriving Eq
 
@@ -187,14 +187,14 @@ typeOf (Unionize ty cs expr) =
           else
             error $ "Expected type (" ++ show exty
     _ -> error "Can only unionize to union"
-typeOf (Case ex cases) =
+typeOf (Case ty ex cases) =
   case deAlias $ typeOf ex of
-    (Union types) ->
-      if length types /= length cases then
-        error "Number of cases must match number of union members"
+    whole@(Union _) ->
+      if whole /= ty then
+        error "Type mismatch"
       else
-        let (_,_,_,first) = cases !! 0
-        in (foldl (\acc x -> if acc /= x then error "Different types in case branch" else acc) (typeOf first) [typeOf lst | (_,_,_,lst) <- cases])
+        let (_,_,first) = cases !! 0
+        in (foldl (\acc x -> if acc /= x then error "Different types in case branch" else acc) (typeOf first) [typeOf lst | (_,_,lst) <- cases])
     bad -> error $ "Expected union for case but got type " ++ show bad
 
 
