@@ -1,8 +1,7 @@
-type peano = {zero:{} | succ:peano};
-inc(x:peano) -> peano = unionize<peano>(succ=x);
-zero() -> peano = unionize<peano>(zero={});
+data peano = zero {} | succ peano;
+
 toint(x:peano) -> int = case<peano> {x} of {
   ignore:zero = 0;
   n:succ = 1 + toint(n);
 };
-main() -> int = toint(inc(inc(inc(zero()))))
+main() -> int = toint(succ(succ(succ(zero()))));

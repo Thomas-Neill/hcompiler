@@ -201,7 +201,8 @@ typeOf (Case ty ex cases) =
 data Declaration =
   FuncDef String [(String,Type)] Type Expr |
   Extern String Type |
-  TypeDef String Type
+  TypeDef String Type |
+  Data String [(String,Type)] -- nice syntactical sugar
 
 instance Show Declaration where
   show (FuncDef nm args ret bod) =
@@ -209,6 +210,10 @@ instance Show Declaration where
     ") -> " ++ show ret ++ " = " ++ show bod ++ ";"
   show (Extern nm ty) = "extern " ++ nm ++ " : " ++ show ty ++ ";"
   show (TypeDef nm ty) = "type " ++ nm ++ " = " ++ show ty ++ ";"
+  show (Data nm css) =
+    let nms = map fst css
+        tys = map snd css
+      in "data " ++ nm ++ " = " ++ intercalate " | " (map show tys) ++ ";"
 
 typeofDecl :: Declaration -> Maybe (String,Type)
 typeofDecl (FuncDef name tys ret result) = Just (name, Func (map snd tys) ret)

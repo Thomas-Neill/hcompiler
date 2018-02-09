@@ -119,6 +119,9 @@ decl = pad $ choice [
     TypeDef <$>
       (try (string "type") *> spaces1 *> many1 varChar) <*>
       (spaces *> char '=' *> spaces *> typ <* spaces),
+    Data <$>
+      (try (string "data") *> spaces1 *> many1 varChar) <*>
+      (spaces *> char '=' *> spaces *> ((,) <$> many1 varChar <*> (spaces1 *> typ)) `sepBy` (pad $ char '|')),
     FuncDef <$>
       (many1 varChar) <*>
       (spaces *> argsTypes) <*>

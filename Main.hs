@@ -21,6 +21,10 @@ main = do
     (Left err) -> die (show err)
     (Right ast'') -> do
       let ast = runPasses ast''
+      putStrLn "Before passes"
+      mapM_ print ast''
+      putStrLn "After passes"
+      mapM_ print ast
       compile (workingMod $ execState
         (do
           declareGlobals $ catMaybes $ map typeofDecl ast
