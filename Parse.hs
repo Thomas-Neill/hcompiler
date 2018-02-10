@@ -22,30 +22,31 @@ pad p = spaces *> p <* spaces
 
 varChar = oneOf $ ['a'..'z'] ++ ['A'..'Z']
 
-argsTypes = char '(' *> (((,) <$> (pad $ many1 varChar) <*> (char ':' *> pad typ)) `sepBy` char ',') <* char ')'
+name = many1 varChar
 
-var = Var Nothing <$> many1 varChar
+argsTypes = char '(' *> (((,) <$> (pad $ name) <*> (char ':' *> pad typ)) `sepBy` char ',') <* char ')'
 
 typ = choice [
     try $ (string "int") *> pure HInt,
     try $ (string "float") *> pure HFloat,
     try $ (string "bool") *> pure HBool,
-    TypeVar Nothing <$> many1 varChar,
+    TypeVar Nothing <$> name,
     Func <$> (char '(' *> spaces *> char '(' *> spaces *> typ `sepBy` (pad $ char ',')) <*>
              (spaces *> char ')' *> spaces *> string "->" *> spaces *> typ <* spaces <* char ')'),
     Structure <$> try (char '{' *> spaces *>
-      ((,) <$> (many1 varChar) <*> (spaces *> char ':' *> spaces *> typ))
+      ((,) <$> name <*> (spaces *> char ':' *> spaces *> typ))
         `sepBy` (pad $ char ',')
       <* spaces <* char '}'),
     Union <$> (char '{' *> spaces *>
-      ((,) <$> (many1 varChar) <*> (spaces *> char ':' *> spaces *> typ))
+      ((,) <$> name <*> (spaces *> char ':' *> spaces *> typ))
         `sepBy` (pad $ char '|')
       <* spaces <* char '}')
   ]
 
 primary' = pad $ choice [
     boolit,
-    var,
+    try $ TemplateVar <$> name <*> (spaces *> char '<' *> spaces *> typ `sepBy` (pad $ char ',') <* spaces <* char '>'),
+    Var Nothing <$> name,
     try double,
     int,
     char '(' *> expr <* char ')',
@@ -57,7 +58,7 @@ primary = do
   val <- primary'
   foldl (\acc x-> x acc) val <$> (many $
     choice [
-      (\prop acc -> Access acc prop) <$> (char '.' *> many1 varChar),
+      (\prop acc -> Access acc prop) <$> (char '.' *> name),
       (\args acc -> Call acc args) <$> (char '(' *> (expr `sepBy` (pad $ char ',')) <* char ')')
     ])
 
@@ -68,7 +69,7 @@ lambda = Lambda <$>
 
 struct = StructLiteral <$>
   (char '{' *> spaces *>
-    ((,) <$> (many1 varChar) <*> (spaces *> char '=' *> spaces *> expr))
+    ((,) <$> name <*> (spaces *> char '=' *> spaces *> expr))
       `sepBy` (pad $ char ',')
    <* spaces <* char '}')
 
@@ -80,20 +81,20 @@ if' = If <$> (try (string "if") *> spaces *> char '{' *> expr) <*>
 let' = Let <$> (try (string "let") *> spaces *> char '{' *> assignment `sepBy` char ',') <*>
                (spaces *> char '}' *> spaces *> string "in" *> spaces *> char '{' *> expr <* char '}')
     where
-      assignment = (,) <$> (spaces *> many1 varChar <* spaces <* char '=') <*> expr
+      assignment = (,) <$> (spaces *> name <* spaces <* char '=') <*> expr
 
 cast = Cast <$> (try (string "cast<") *> spaces *> typ) <*>
                 (char '>' *> spaces *> char '(' *> expr <* char ')')
 
 unionize = Unionize <$> (try (string "unionize<") *> spaces *> typ) <*>
-                (char '>' *> spaces *> char '(' *> spaces *> many1 varChar) <*>
+                (char '>' *> spaces *> char '(' *> spaces *> name) <*>
                 (spaces *> char '=' *> expr <* char ')')
 
 case' = Case <$> (try (string "case") *> spaces *> char '<' *>  spaces *>typ) <*>
           (char '>' *> spaces *> char '{' *> expr) <*>
           (char '}' *> spaces *> string "of" *> spaces *> char '{' *> spaces *>
-            many1 ((,,) <$> (many1 varChar) <*>
-              (spaces *> string ":" *> spaces *> many1 varChar) <*>
+            many1 ((,,) <$> name <*>
+              (spaces *> string ":" *> spaces *> name) <*>
               (spaces *> char '=' *> expr <* char ';' <* spaces)) <* spaces <* char '}')
 
 special = pad $ choice [if',let',cast,unionize,case',primary]
@@ -114,16 +115,19 @@ expr = or'
 
 decl = pad $ choice [
     Extern <$>
-      (try (string "extern") *> spaces1 *> many1 varChar) <*>
+      (try (string "extern") *> spaces1 *> name) <*>
       (spaces *> char ':' *> spaces *> typ <* spaces),
     TypeDef <$>
-      (try (string "type") *> spaces1 *> many1 varChar) <*>
+      (try (string "type") *> spaces1 *> name) <*>
       (spaces *> char '=' *> spaces *> typ <* spaces),
     Data <$>
-      (try (string "data") *> spaces1 *> many1 varChar) <*>
-      (spaces *> char '=' *> spaces *> ((,) <$> many1 varChar <*> (spaces1 *> typ)) `sepBy` (pad $ char '|')),
+      (try (string "data") *> spaces1 *> name) <*>
+      (spaces *> char '=' *> spaces *> ((,) <$> name <*> (spaces1 *> typ)) `sepBy` (pad $ char '|')),
+    Template <$>
+      (try (string "template") *> spaces *> char '<' *> spaces *> name `sepBy` (pad $ char ',') <* spaces <* char '>') <*>
+      (spaces *> decl),
     FuncDef <$>
-      (many1 varChar) <*>
+      name <*>
       (spaces *> argsTypes) <*>
       (spaces *> string "->" *> spaces *> typ) <*>
       (spaces *> char '=' *> spaces *> expr)

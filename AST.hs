@@ -27,12 +27,24 @@ instance Show Type where
   show (Union names) =  "{" ++ intercalate "|" (map (\(nm,ty) -> nm ++ ":" ++ show ty) names) ++ "}"
   show (TypeVar ty nm) = nm
 
+serializeType HInt = "int"
+serializeType HFloat = "float"
+serializeType HBool = "bool"
+serializeType (Func tys ret) =
+  "func__" ++ serializeType ret ++ "__" ++ intercalate "_" (map serializeType tys) ++ "__"
+serializeType (Structure names) =
+  "struct__" ++ intercalate "_" (map (serializeType . snd) names) ++ "__"
+serializeType (Union names) =
+  "struct__" ++ intercalate "_" (map (serializeType . snd) names) ++ "__"
+serializeType (TypeVar _ nm) = nm
+
 data Expr = ILit Int |
             FLit Float |
             BLit Bool |
             Binary BinOp Expr Expr |
             If Expr Expr Expr |
             Var (Maybe Type) String |
+            TemplateVar String [Type] |
             Let [(String,Expr)] Expr |
             Call Expr [Expr] |
             Lambda [(String,Type)] Type Expr |
@@ -50,6 +62,7 @@ instance Show Expr where
   show (If c l r) = "if {" ++ show c ++ "} then {" ++ show l ++ "} else {" ++ show r ++ "}"
   show (Var Nothing s) = s
   show (Var (Just ty) s) = s ++ ":" ++ show ty
+  show (TemplateVar s tys) = s ++ "<" ++ intercalate "," (map show tys) ++ ">"
   show (Let pre e) = "let {" ++ intercalate ", " (map show pre) ++ "} in {" ++ show e ++ "}"
   show (Call e args) = "(" ++ show e ++ ")(" ++ intercalate ", " (map show args) ++ ")"
   show (Lambda args ty ex) = "{lambda(" ++ intercalate ", " (map (\(nm,ty)->nm ++ ":" ++ show ty) args) ++ ")->" ++ show ty ++ "=" ++ show ex ++ "}"
@@ -202,11 +215,13 @@ data Declaration =
   FuncDef String [(String,Type)] Type Expr |
   Extern String Type |
   TypeDef String Type |
-  Data String [(String,Type)] -- nice syntactical sugar
+  --syntactical sugar below
+  Data String [(String,Type)] |
+  Template [String] Declaration deriving Eq
 
 instance Show Declaration where
   show (FuncDef nm args ret bod) =
-    nm ++ "(" ++ intercalate " " (map (\(x,y) -> x ++ ":" ++ show y) args) ++
+    nm ++ "(" ++ intercalate "," (map (\(x,y) -> x ++ ":" ++ show y) args) ++
     ") -> " ++ show ret ++ " = " ++ show bod ++ ";"
   show (Extern nm ty) = "extern " ++ nm ++ " : " ++ show ty ++ ";"
   show (TypeDef nm ty) = "type " ++ nm ++ " = " ++ show ty ++ ";"
@@ -214,6 +229,8 @@ instance Show Declaration where
     let nms = map fst css
         tys = map snd css
       in "data " ++ nm ++ " = " ++ intercalate " | " (map show tys) ++ ";"
+  show (Template vars st) =
+    "template<" ++ intercalate "," vars ++ "> " ++ show st
 
 typeofDecl :: Declaration -> Maybe (String,Type)
 typeofDecl (FuncDef name tys ret result) = Just (name, Func (map snd tys) ret)

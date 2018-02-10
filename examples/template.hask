@@ -1,0 +1,4 @@
+template<T> id(x:T) -> T = x;
+template<Q,P> const(x:Q,y:P) -> P = id<P>(y);
+
+main() -> int = const<{},int>({},10);

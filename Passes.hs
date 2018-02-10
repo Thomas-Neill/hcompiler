@@ -3,6 +3,7 @@ import AST
 import Util
 import Control.Monad.State
 import Data.Maybe
+import Data.List
 import Debug.Trace
 passRecurseE :: (Expr -> Expr) -> Expr -> Expr
 passRecurseE p w@(ILit _) = w
@@ -198,6 +199,7 @@ typeAliases decls = catMaybes $ map typeAliases' decls
           (Structure tys) -> Structure [(nm,typeAlias ty)|(nm,ty)<-tys]
           (Union tys) -> Union [(nm,typeAlias ty)|(nm,ty)<-tys]
           (TypeVar Nothing nm) -> TypeVar (fmap typeAlias (lookup nm typetbl)) nm
+          w@(TypeVar (Just ty) nm) -> w
     typeAliases' (FuncDef name args ty ex) =
       Just $ FuncDef name [(nm,typeAlias ty)|(nm,ty)<-args] (typeAlias ty) (typeAliasesE ex)
     typeAliases' (Extern nm ty) = Just $ Extern nm ty
@@ -226,4 +228,94 @@ removeData decls = newdefns ++ (filter isntdata decls)
       in tydef : constructors
     getnewdefns _ = []
 
-runPasses = validate . removeLambdas . typeArgs . typeGlobals . typeAliases . removeData
+--instantiates templates for functions and externs
+removeTemplates decls = filter isnttemplate $ untilID removeTemplates' decls
+  where
+    isnttemplate (Template _ _) = False
+    isnttemplate _ = True
+    untilID f x = if f x == x then x else untilID f (f x) --tries to find fixed point
+
+removeTemplates' decls = newdefns ++ (map rmtmpvars decls)
+  where
+    mangle nm tys = nm ++ "__template__" ++ concat (map serializeType tys) ++ "__"
+    --stringify template vars
+    rmtmpvars (FuncDef nm args ret ex) = FuncDef nm args ret $ rmtmpvarsE ex
+    rmtmpvars w@(TypeDef _ _) = w
+    rmtmpvars w@(Extern _ _) = w
+    rmtmpvars w@(Data _ _) = w
+    rmtmpvars w@(Template _ _) = w
+    rmtmpvarsE (TemplateVar nm tys) = Var Nothing (mangle nm tys)
+    rmtmpvarsE x = passRecurseE rmtmpvarsE x
+
+    newdefns = let
+      -- map of string names to declarations
+      defntbl = catMaybes $ map gettempdefn decls
+      gettempdefn w@(Template tmpargs decl) =
+        case decl of
+            (FuncDef nm _ _ _) -> Just (nm,w)
+            (Extern nm _) -> Just (nm,w)
+            _ -> Nothing
+      gettempdefn _ = Nothing
+      --list of names which must be instantiated with type t
+      usetbl = nub $ concat $ map gettmpuses decls
+      gettmpuses (FuncDef nm args ret ex) = gettmpusesE ex
+      gettmpuses (TypeDef _ _) = []
+      gettmpuses (Extern _ _) = []
+      gettmpuses (Data _ _) = []
+      gettmpuses (Template _ _) = []
+
+      gettmpusesE (ILit _) = []
+      gettmpusesE (FLit _) = []
+      gettmpusesE (BLit _) = []
+      gettmpusesE (Binary _ l r) = gettmpusesE l ++ gettmpusesE r
+      gettmpusesE (If a b c) = gettmpusesE a ++ gettmpusesE b ++ gettmpusesE c
+      gettmpusesE (Var _ _) = []
+      gettmpusesE (TemplateVar nm ty) = [(nm,ty)]
+      gettmpusesE (Let pre e) =
+        (concat $ map (gettmpusesE . snd) pre) ++
+          (filter (\(x,_) -> x `notElem` (map fst pre)) $ gettmpusesE e)
+      gettmpusesE (Call f args) =
+        gettmpusesE f ++ concat (map gettmpusesE args)
+      gettmpusesE (Lambda args _ ex) =
+        (filter (\(x,_) -> x `notElem` (map fst args)) $ gettmpusesE ex)
+      gettmpusesE (Access ex _) =
+        gettmpusesE ex
+      gettmpusesE (StructLiteral props) =
+        concat $ (map (gettmpusesE . snd) props)
+      gettmpusesE (Cast _ ex) = gettmpusesE ex
+      gettmpusesE (Unionize _ _ ex) = gettmpusesE ex
+      gettmpusesE (Case _ ex css) = gettmpusesE ex ++ concat [gettmpusesE expr | (_,_,expr) <- css]
+      --now we proceed to instantiate the used templates
+      getdecl (nm,tys) =
+        case lookup nm defntbl of
+          Nothing -> error $ "Could not find template " ++ nm
+          (Just (Template tpargs decl)) ->
+            if length tys /= length tpargs then
+              error $ "Application of template " ++ nm ++ " incorrect args #..."
+            else
+              let
+                tempvartbl = zip tpargs tys
+                typeTemplate ty =
+                    case ty of
+                      HInt -> HInt
+                      HBool -> HBool
+                      (Func tys ty) -> Func (map typeTemplate tys) (typeTemplate ty)
+                      (Structure tys) -> Structure [(nm,typeTemplate ty)|(nm,ty)<-tys]
+                      (Union tys) -> Union [(nm,typeTemplate ty)|(nm,ty)<-tys]
+                      w@(TypeVar Nothing nm) -> maybe w id (lookup nm tempvartbl)
+                typeTemplates (FuncDef name args ty ex) =
+                  FuncDef (mangle name tys)  [(nm,typeTemplate ty)|(nm,ty)<-args] (typeTemplate ty) (typeTemplatesE ex)
+                typeTemplates (Extern name args) =
+                  Extern (mangle name tys) (map typeTemplate args)
+
+                typeTemplatesE (Var (Just ty) nm) = Var (Just $ typeTemplate ty) nm
+                typeTemplatesE (Lambda args ret ex) = Lambda [(nm,typeTemplate ty) | (nm,ty) <- args] (typeTemplate ret) (typeTemplatesE ex)
+                typeTemplatesE (Cast ty ex) = Cast (typeTemplate ty) (typeTemplatesE ex)
+                typeTemplatesE (Unionize ty nm ex) = Unionize (typeTemplate ty) nm (typeTemplatesE ex)
+                typeTemplatesE (Case ty ex cases) = Case (typeTemplate ty) ex [(nm,cs,typeTemplatesE ex) | (nm,cs,ex) <- cases]
+                typeTemplatesE (TemplateVar nm tys) = TemplateVar nm (map typeTemplate tys)
+                typeTemplatesE ex = passRecurseE typeTemplatesE ex
+              in typeTemplates decl
+        in map getdecl usetbl
+
+runPasses = validate . removeLambdas . typeArgs . typeGlobals . typeAliases . removeData . removeTemplates
