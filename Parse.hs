@@ -30,6 +30,7 @@ typ = choice [
     try $ (string "int") *> pure HInt,
     try $ (string "float") *> pure HFloat,
     try $ (string "bool") *> pure HBool,
+    try $ TemplateType <$> name <*> (char '<' *> spaces *> typ `sepBy` (pad $ char ',') <* spaces <* char '>'),
     TypeVar Nothing <$> name,
     Func <$> (char '(' *> spaces *> char '(' *> spaces *> typ `sepBy` (pad $ char ',')) <*>
              (spaces *> char ')' *> spaces *> string "->" *> spaces *> typ <* spaces <* char ')'),

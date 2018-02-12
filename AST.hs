@@ -4,7 +4,8 @@ import Util (commonArgs)
 import Data.List
 
 data Type = HInt | HFloat | HBool | Func [Type] Type |
-            Structure [(String,Type)] | Union [(String,Type)] | TypeVar (Maybe Type) String
+            Structure [(String,Type)] | Union [(String,Type)] | TypeVar (Maybe Type) String |
+            TemplateType String [Type]
 
 instance Eq Type where
   HInt == HInt = True
@@ -26,6 +27,9 @@ instance Show Type where
   show (Structure names) = "{" ++ intercalate "," (map (\(nm,ty) -> nm ++ ":" ++ show ty) names) ++ "}"
   show (Union names) =  "{" ++ intercalate "|" (map (\(nm,ty) -> nm ++ ":" ++ show ty) names) ++ "}"
   show (TypeVar ty nm) = nm
+  show (TemplateType nm tys) = nm ++ "<" ++ intercalate "," (map show tys) ++ ">"
+
+mangle nm tys = nm ++ "__template__" ++ concat (map serializeType tys) ++ "__"
 
 serializeType HInt = "int"
 serializeType HFloat = "float"
@@ -37,6 +41,7 @@ serializeType (Structure names) =
 serializeType (Union names) =
   "struct__" ++ intercalate "_" (map (serializeType . snd) names) ++ "__"
 serializeType (TypeVar _ nm) = nm
+serializeType (TemplateType nm tys) = mangle nm tys
 
 data Expr = ILit Int |
             FLit Float |

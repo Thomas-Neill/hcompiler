@@ -207,7 +207,12 @@ exprCodegen whole@(H.Case ty' ex cases) = do
   ex' <- exprCodegen ex
   ty <- gep' (pointerto i32) ex' [0,0] >>= load
   switch ty (zip (map (C.Int 32) [0..]) caseBlocks)
-  phis <- flip mapM (zip caseBlocks cases ) $ \(blk,(nm,cs,ex)) -> do
+  let
+    lk3 :: [(String,String,H.Expr)] -> String -> (String,String,H.Expr)
+    lk3 [] _ = error "???"
+    lk3 ((nm,cs,typ):xs) needle = if needle == cs then (nm,cs,typ) else lk3 xs needle
+    cases' = map (lk3 cases . fst) types
+  phis <- flip mapM (zip caseBlocks cases') $ \(blk,(nm,cs,ex)) -> do
     let ty = fromJust $ lookup cs types
     useBlock blk
     val <- gep' (pointerto voidptr) ex' [0,1] >>= load >>= flip bitcast (htoll ty)
