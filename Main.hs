@@ -10,6 +10,7 @@ import Passes
 import System.Environment
 import System.Exit
 import System.Process
+import System.FilePath
 
 main = do
   args <- getArgs
@@ -20,9 +21,13 @@ main = do
   case ast' of
     (Left err) -> die (show err)
     (Right ast'') -> do
-      let ast = runPasses ast''
+      ast''' <- resolveImports (case args of
+            [] -> "./"
+            [fname] -> dropFileName fname
+          ) ast''
+      let ast = runPasses ast'''
       putStrLn "Before passes"
-      mapM_ print ast''
+      mapM_ print ast'''
       putStrLn "After passes"
       mapM_ print ast
       compile (workingMod $ execState

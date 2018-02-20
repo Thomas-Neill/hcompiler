@@ -1,0 +1,11 @@
+template<T> data list = null {} | cons {head:T,tail:list<T>};
+template<A,B> map(x:list<A>,f:((A) -> B)) -> list<B> =
+  case<list<A>> {x} of {
+    ignore:null = null<B>();
+    c:cons = cons<B>(f(c.head),map<A,B>(c.tail,f));
+  };
+template <A> fold(x:A,f:((A,A) -> A),xs:list<A>) -> A =
+  case<list<A>> {xs} of {
+    ignore:null = x;
+    c:cons = f(x,fold<A>(c.head,f,c.tail));
+  };

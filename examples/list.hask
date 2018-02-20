@@ -1,9 +1,0 @@
-data list = null {} | cons {head:int,tail:list};
-
-sum(x:list) -> int =
-  case<list> {x} of {
-    ignore:null = 0;
-    node:cons = node.head + sum(node.tail);
-};
-
-main() -> int = sum(cons(1,cons(2,cons(3,null()))));

@@ -127,6 +127,8 @@ decl = pad $ choice [
     Template <$>
       (try (string "template") *> spaces *> char '<' *> spaces *> name `sepBy` (pad $ char ',') <* spaces <* char '>') <*>
       (spaces *> decl),
+    Import <$>
+      (try (string "import") *> spaces *> many1 (oneOf ("/" ++ ['a'..'z'] ++ ['A'..'Z'])) <* spaces),
     FuncDef <$>
       name <*>
       (spaces *> argsTypes) <*>

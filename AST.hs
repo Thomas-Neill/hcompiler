@@ -222,7 +222,8 @@ data Declaration =
   TypeDef String Type |
   --syntactical sugar below
   Data String [(String,Type)] |
-  Template [String] Declaration deriving Eq
+  Template [String] Declaration |
+  Import String deriving Eq
 
 instance Show Declaration where
   show (FuncDef nm args ret bod) =
@@ -236,6 +237,7 @@ instance Show Declaration where
       in "data " ++ nm ++ " = " ++ intercalate " | " (map show tys) ++ ";"
   show (Template vars st) =
     "template<" ++ intercalate "," vars ++ "> " ++ show st
+  show (Import s) = "import " ++ s ++ ";"
 
 typeofDecl :: Declaration -> Maybe (String,Type)
 typeofDecl (FuncDef name tys ret result) = Just (name, Func (map snd tys) ret)
