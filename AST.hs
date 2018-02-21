@@ -75,7 +75,7 @@ instance Show Expr where
   show (StructLiteral exs) = "{" ++ intercalate ", " (map (\(nm,ex)->nm++"="++show ex) exs) ++ "}"
   show (Cast ty expr) = "cast<" ++ show ty ++ ">(" ++ show expr ++ ")"
   show (Unionize ty nm expr) = "unionize<" ++ show ty ++ ">(" ++ nm ++ "=" ++ show expr ++ ")"
-  show (Case ty expr cases) = "case<"++show ty++"> {" ++ show expr ++ "} of {" ++ concat (map (\(nm,cs,ex) -> nm ++ ":(" ++ cs ++ ")=" ++ show ex ++ ";") cases) ++ "}"
+  show (Case ty expr cases) = "case<"++show ty++"> {" ++ show expr ++ "} of {" ++ concat (map (\(nm,cs,ex) -> nm ++ ":" ++ cs ++ "=" ++ show ex ++ ";") cases) ++ "}"
 
 data BinOp = Add | Sub | Mul | Div | Equal | Inequal | Greater | Less | GrEqual | LEqual | And | Or deriving Eq
 
@@ -175,7 +175,7 @@ typeOf w@(Call f args) =
               else
                 error "Invalid arg types"
           else
-            error "More args than the function takes"
+            error $ show w ++ ": More args than the function takes"
         else ret
       _ -> error "You can only call a function!"
 typeOf (Lambda args rettype expr) =
