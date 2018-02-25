@@ -1,0 +1,1 @@
+extern putch: ((char) -> char);

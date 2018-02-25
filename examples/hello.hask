@@ -1,0 +1,6 @@
+template<A,B> seq(x:A,y:B) -> B = y;
+
+main() -> char =
+  let {
+    sq = seq<char,char>
+  } in { sq(putch('H'),sq(putch('e'),sq(putch('l'),sq(putch('l'),sq(putch('o'),sq(putch('!'),putch('\10')))))))};

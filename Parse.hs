@@ -3,14 +3,9 @@ module Parse where
 import Text.ParserCombinators.Parsec
 import AST
 import Data.Maybe
+import Data.Char
 
 spaces1 = many1 space
-
-double :: Parser Expr
-double = FLit . read <$> ((++) <$> many1 digit <*> ((:) <$> char '.' <*> many1 digit))
-
-int :: Parser Expr
-int = ILit . read <$> many1 digit
 
 boolit = choice [
     try (string "true") *> (pure $ BLit True),
@@ -22,6 +17,8 @@ pad p = spaces *> p <* spaces
 
 varChar = oneOf $ ['a'..'z'] ++ ['A'..'Z']
 
+stringChar = oneOf $ ['a'..'z']++['A'..'Z']++['0'..'9']++"!\"#%&()*+,-./:;<=>?[\\]^_{|}~ "
+
 name = many1 varChar
 
 argsTypes = char '(' *> (((,) <$> (pad $ name) <*> (char ':' *> pad typ)) `sepBy` char ',') <* char ')'
@@ -30,6 +27,7 @@ typ = choice [
     try $ (string "int") *> pure HInt,
     try $ (string "float") *> pure HFloat,
     try $ (string "bool") *> pure HBool,
+    try $ (string "char") *> pure HChar,
     try $ TemplateType <$> name <*> (char '<' *> spaces *> typ `sepBy` (pad $ char ',') <* spaces <* char '>'),
     TypeVar Nothing <$> name,
     Func <$> (char '(' *> spaces *> char '(' *> spaces *> typ `sepBy` (pad $ char ',')) <*>
@@ -48,8 +46,10 @@ primary' = pad $ choice [
     boolit,
     try $ TemplateVar <$> name <*> (spaces *> char '<' *> spaces *> typ `sepBy` (pad $ char ',') <* spaces <* char '>'),
     Var Nothing <$> name,
-    try double,
-    int,
+    try $ FLit . read <$> ((++) <$> many1 digit <*> ((:) <$> char '.' <*> many1 digit)),
+    ILit . read <$> many1 digit,
+    try $ CLit <$> (char '\'' *> stringChar <* char '\''),
+    CLit . chr . read <$> (string "'\\" *> many1 digit <* char '\''),
     char '(' *> expr <* char ')',
     try lambda,
     struct

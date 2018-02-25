@@ -20,6 +20,7 @@ import Control.Monad.State
 
 import Debug.Trace
 import Data.Word
+import Data.Char
 import qualified Data.ByteString.Short as SBS
 import qualified Data.ByteString.Char8 as BS
 
@@ -57,6 +58,7 @@ constint :: Int -> Operand
 constint = ConstantOperand . C.Int 32 . toInteger
 constb b = ConstantOperand . C.Int 1 $ if b then 1 else 0
 constf = ConstantOperand . C.Float . F.Single
+constc = ConstantOperand . C.Int 8 . toInteger . ord
 
 --monad utils
 genCompilerState modName sourceName =
@@ -231,6 +233,8 @@ addi8 l r = ins i8 $ Add False False l r []
 floattoint x = ins i32 $ FPToSI x i32 []
 inttofloat x = ins float $ SIToFP x float []
 booltoint x = ins i32 $ ZExt x i32 []
+chartoint x = ins i32 $ ZExt x i32 []
+inttochar x = ins i32 $ Trunc x i8 []
 call f args = ins (resultType $ pointerReferent $ inferType f) $
   Call Nothing CC.C [] (Right f) [(x,[]) | x <- args] [] []
 
@@ -257,6 +261,7 @@ htoll :: H.Type -> Type
 htoll H.HBool = pointerto i1
 htoll H.HInt = pointerto i32
 htoll H.HFloat = pointerto float
+htoll H.HChar = pointerto i8
 htoll (H.Func args ret) = funcType
 htoll (H.Structure props) =
   pointerto $ StructureType False $ (map (htoll . snd) props)
@@ -268,11 +273,13 @@ htoc :: H.Type -> Type
 htoc H.HInt = i32
 htoc H.HFloat = float
 htoc H.HBool = i8 --probably safe ...
+htoc H.HChar = i8
 htoc _ = error "Not defined"
 
 llvaltoc :: H.Type -> Operand -> Codegen Operand
 llvaltoc H.HInt x = load x
 llvaltoc H.HFloat x = load x
+llvaltoc H.HChar x = load x
 llvaltoc H.HBool val = do
   val' <- load val
   ins i8 $ ZExt val' i8 []
@@ -285,6 +292,10 @@ cvaltoll H.HInt x = do
   return re
 cvaltoll H.HFloat x = do
   re <- alloc float
+  store re x
+  return re
+cvaltoll H.HChar x = do
+  re <- alloc i8
   store re x
   return re
 cvaltoll H.HBool x = do

@@ -1,3 +1,0 @@
-extern sine: ((float) -> float);
-extern printb: ((bool) -> int);
-main() -> int = printb(true);

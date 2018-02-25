@@ -17,6 +17,7 @@ exprCodegen :: H.Expr -> Codegen Operand
 exprCodegen (H.ILit i) = pointerize (pointerto i32) (constint i)
 exprCodegen (H.FLit f) = pointerize (pointerto float) (constf f)
 exprCodegen (H.BLit b) = pointerize (pointerto i1) (constb b)
+exprCodegen (H.CLit c) = pointerize (pointerto i8) (constc c)
 exprCodegen (H.Var _ v) = find v
 exprCodegen whole@(H.If c t e) = do
   let rt = H.typeOf whole --resulting type
@@ -183,8 +184,11 @@ exprCodegen whole@(H.Cast ty expr) = do
       H.HInt -> case ty of
         H.HFloat -> exprCodegen expr >>= load >>= inttofloat
         H.HBool -> exprCodegen (H.Binary H.Equal expr (H.ILit 0))
+        H.HChar -> exprCodegen expr >>= load >>= inttochar
       H.HFloat -> case ty of
         H.HInt -> exprCodegen expr >>= load >>= floattoint
+      H.HChar -> case ty of
+        H.HInt -> exprCodegen expr >>= load >>= chartoint
     pointerize (htoll $ H.typeOf whole) val
 
 exprCodegen (H.Unionize ty cs expr) = do

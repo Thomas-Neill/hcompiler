@@ -227,7 +227,7 @@ runPasses = validate . removeLambdas . typeArgs . typeGlobals . typeAliases . re
 
 resolveImports' :: String -> [String] -> [Declaration] -> IO [Declaration]
 resolveImports' root already decls =
-  let importNames = catMaybes $ map getImport decls
+  let importNames = ["std/prelude.hask"] ++ (catMaybes $ map getImport decls)
       getImport (Import nm) = Just $ nm ++ ".hask"
       getImport _ = Nothing
       newImports = filter (\x -> not $ x `elem` already) importNames
