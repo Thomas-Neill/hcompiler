@@ -84,26 +84,50 @@ typeArgs decls = map typeArgs' decls
       FuncDef name types ret $ typeVars [types] expr
     typeArgs' (Extern nm ty) = Extern nm ty
 
-typeAliases decls = catMaybes $ map typeAliases' decls
+typeAliases decls = trace "hello" $ filter isnttypedef $ typeAliases' decls []
   where
+    isnttypedef (TypeDef _ _) = False
+    isnttypedef _ = True
+
+typeAliases' decls lastneeded =
+    trace "before" $ if needed == [] then
+      decls
+    else if needed == lastneeded then
+      error $ "Some or all of the following type vars are undeclared: " ++ intercalate " " needed
+    else typeAliases' (map typeAliases'' decls) needed --recurse until no change needed or nothing done
+  where
+    --if none are needed, we terminate.
+    --if this list is the same as last time, we error out.
+    neededAliases (FuncDef name args ty ex) =
+      neededAliasesT ty ++ concat (map (neededAliasesT . snd) args) ++ passAccumulateT neededAliasesT ex
+    neededAliases (Extern _ ty) = neededAliasesT ty
+    neededAliases (TypeDef _ ty) = neededAliasesT ty
+
+    neededAliasesT (TypeVar Nothing nm) = [nm]
+    neededAliasesT (TypeVar (Just ty) nm) = [] -- assumes `ty` has no needed aliases
+    neededAliasesT ty = typeAccumulate neededAliasesT ty
+
+    needed = concat $ map neededAliases decls
+
     typeAlias ty = let
       getTypeAliases (FuncDef _ _ _ _) = Nothing
       getTypeAliases (Extern _ _) = Nothing
       getTypeAliases (TypeDef nm ty) = Just (nm,ty)
       typetbl = (catMaybes $ map getTypeAliases decls)
       in
-        case ty of
+        trace (show typetbl) $ case ty of
           (TypeVar Nothing nm) -> TypeVar (fmap typeAlias (lookup nm typetbl)) nm
           x -> typeRecurse typeAlias x
-    typeAliases' (FuncDef name args ty ex) =
-      Just $ FuncDef name [(nm,typeAlias ty)|(nm,ty)<-args] (typeAlias ty) (passRecurseT typeAlias ex)
-    typeAliases' (Extern nm ty) = Just $ Extern nm ty
-    typeAliases' (TypeDef nm ty) = Nothing
+    typeAliases'' (FuncDef name args ty ex) =
+      FuncDef name [(nm,typeAlias ty)|(nm,ty)<-args] (typeAlias ty) (passRecurseT typeAlias ex)
+    typeAliases'' (Extern nm ty) = Extern nm (typeAlias ty)
+    typeAliases'' (TypeDef nm ty) = TypeDef nm (typeAlias ty)
 
 --instantiates templates for functions and externs
 removeTemplates decls = filter isnttemplate $ removeTemplates' [] [] decls
   where
     isnttemplate (Template _ _) = False
+    isnttemplate (SpecificTemplate _ _) = False
     isnttemplate _ = True
 
 --what have I done...
@@ -111,13 +135,14 @@ removeTemplates decls = filter isnttemplate $ removeTemplates' [] [] decls
 removeTemplates' already alreadytys decls =
   let next = newdefns ++ (map (rmtmptyvars . rmtmpvars) decls)
     in if newdefns == [] then next
-        else removeTemplates' (usetbl ++ already) (tyusetbl ++ alreadytys) next
+        else trace (show tyusetbl) $ removeTemplates' (usetbl ++ already) (tyusetbl ++ alreadytys) next
   where
     --stringify template vars
     rmtmpvars (FuncDef nm args ret ex) = FuncDef nm args ret $ rmtmpvarsE ex
     rmtmpvars w@(TypeDef _ _) = w
     rmtmpvars w@(Extern _ _) = w
     rmtmpvars w@(Template _ _) = w
+    rmtmpvars w@(SpecificTemplate _ _) = w
 
     rmtmpvarsE (TemplateVar nm tys) = Var Nothing (mangle nm tys)
     rmtmpvarsE x = passRecurse rmtmpvarsE x
@@ -127,6 +152,7 @@ removeTemplates' already alreadytys decls =
     rmtmptyvars (TypeDef nm ty) = TypeDef nm (rmtmptyvarsT ty)
     rmtmptyvars (Extern nm ty) = Extern nm (rmtmptyvarsT ty)
     rmtmptyvars w@(Template _ _) = w
+    rmtmptyvars w@(SpecificTemplate _ _) = w
 
     rmtmptyvarsT (TemplateType nm tys) = TypeVar Nothing (mangle nm tys)
     rmtmptyvarsT x = typeRecurse rmtmptyvarsT x
@@ -140,12 +166,21 @@ removeTemplates' already alreadytys decls =
           (Extern nm _) -> Just (nm,w)
           _ -> Nothing
     gettempdefn _ = Nothing
+
+    specificdefntbl = catMaybes $ map getspecifitctempdefn decls
+    getspecifitctempdefn w@(SpecificTemplate tmpargs decl) =
+      case decl of
+        (FuncDef nm _ _ _) -> Just (nm,w)
+        (Extern nm _) -> Just (nm,w)
+        _ -> Nothing
+    getspecifitctempdefn _ = Nothing
     --list of names which must be instantiated with types tys
     usetbl = filter (\x -> not $ x `elem` already) $ nub $ concat $ map gettmpuses decls
     gettmpuses (FuncDef nm args ret ex) = gettmpusesE ex
     gettmpuses (TypeDef _ _) = []
     gettmpuses (Extern _ _) = []
     gettmpuses (Template _ _) = []
+    gettmpuses (SpecificTemplate _ _) = []
 
     gettmpusesE (TemplateVar nm tys) = [(nm,tys)]
     gettmpusesE x = passAccumulate gettmpusesE x
@@ -158,12 +193,20 @@ removeTemplates' already alreadytys decls =
         _ -> Nothing
     gettytempdefn _ = Nothing
 
+    specifictydefntbl = catMaybes $ map getspecifictytempdefn decls
+    getspecifictytempdefn w@(SpecificTemplate tmpargs decl) =
+      case decl of
+        (TypeDef nm _) -> Just (nm,w)
+        _ -> Nothing
+    getspecifictytempdefn _ = Nothing
+
     --list of types to instantiate, same as above
     tyusetbl = filter (\x -> not $ x `elem` alreadytys) $ nub $ concat $ map gettytmpuses decls
     gettytmpuses (FuncDef nm args ret ex) = (passAccumulateT gettytmpusesT ex) ++ concat (map (gettytmpusesT . snd) args) ++ gettytmpusesT ret
     gettytmpuses (TypeDef _ ty) = gettytmpusesT ty
     gettytmpuses (Extern _ ty) = gettytmpusesT ty
     gettytmpuses (Template _ _) = []
+    gettytmpuses (SpecificTemplate _ _) = []
 
     gettytmpusesT (TemplateType nm tys) = (nm,tys):(concat $ map gettytmpusesT tys)
     gettytmpusesT x = typeAccumulate gettytmpusesT x
@@ -171,38 +214,59 @@ removeTemplates' already alreadytys decls =
 
     --now we proceed to instantiate the used templates
     getdecl (nm,tys) =
-      case lookup nm defntbl of
-        Nothing -> error $ "Could not find template " ++ nm
-        (Just (Template tpargs decl)) ->
-          if length tys /= length tpargs then
-            error $ "Application of template " ++ nm ++ " incorrect args #..."
-          else
-            let
-              tempvartbl = zip tpargs tys
-              typeTemplate w@(TypeVar Nothing nm) =  maybe w id (lookup nm tempvartbl)
-              typeTemplate x = typeRecurse typeTemplate x
+      let
+        defn = case lookup nm defntbl of
+                Nothing -> error $ "Could not find template " ++ nm
+                (Just (Template tpargs decl)) ->
+                  if length tys /= length tpargs then
+                    error $ "Application of template " ++ nm ++ " incorrect args #..."
+                  else let
+                    tempvartbl = zip tpargs tys
+                    typeTemplate w@(TypeVar Nothing nm) =  maybe w id (lookup nm tempvartbl)
+                    typeTemplate x = typeRecurse typeTemplate x
 
-              typeTemplates (FuncDef name args ty ex) =
-                FuncDef (mangle name tys)  [(nm,typeTemplate ty)|(nm,ty)<-args] (typeTemplate ty) (passRecurseT typeTemplate ex)
-              typeTemplates (Extern name ty) =
-                Extern (mangle name tys) (typeTemplate ty)
-            in typeTemplates decl
+                    typeTemplates (FuncDef name args ty ex) =
+                      FuncDef (mangle name tys)  [(nm,typeTemplate ty)|(nm,ty)<-args] (typeTemplate ty) (passRecurseT typeTemplate ex)
+                    typeTemplates (Extern name ty) =
+                      Extern (mangle name tys) (typeTemplate ty)
+                  in typeTemplates decl
+      in case lookup nm specificdefntbl of
+        (Just (SpecificTemplate tys' decl)) ->
+          if tys' == tys then
+            case decl of
+              (FuncDef name args ty ex) ->
+                FuncDef (mangle name tys) args ty ex
+              (Extern name ty) ->
+                Extern (mangle name tys) ty
+          else
+            defn
+        Nothing -> defn
+
 
     gettydecl (nm,tys) =
-      case lookup nm tydefntbl of
-        Nothing -> error $ "Could not find template " ++ nm
-        (Just (Template tpargs decl)) ->
-          if length tys /= length tpargs then
-            error $ "Application of template " ++ nm ++ " incorrect arg #..."
-          else
-            let
-              tempvartbl = zip tpargs tys
-              typeTemplate w@(TypeVar Nothing nm) = maybe w id (lookup nm tempvartbl)
-              typeTemplate x = typeRecurse typeTemplate x
+      let
+        defn = case lookup nm tydefntbl of
+                Nothing -> error $ "Could not find template " ++ nm
+                (Just (Template tpargs decl)) ->
+                  if length tys /= length tpargs then
+                    error $ "Application of template " ++ nm ++ " incorrect arg #..."
+                  else
+                    let
+                      tempvartbl = zip tpargs tys
+                      typeTemplate w@(TypeVar Nothing nm) = maybe w id (lookup nm tempvartbl)
+                      typeTemplate x = typeRecurse typeTemplate x
 
-              typeTemplates (TypeDef name ty) =
-                TypeDef (mangle name tys) (typeTemplate ty)
-            in typeTemplates decl
+                      typeTemplates (TypeDef name ty) =
+                        TypeDef (mangle name tys) (typeTemplate ty)
+                    in typeTemplates decl
+      in case lookup nm specifictydefntbl of
+        (Just (SpecificTemplate tys' decl)) ->
+          if tys == tys' then
+            case decl of
+              (TypeDef nm ty) -> TypeDef (mangle nm tys) ty
+          else defn
+        Nothing -> defn
+
 
 removeData decls = newdefns ++ (filter isntdata decls)
   where
@@ -221,13 +285,15 @@ removeData decls = newdefns ++ (filter isntdata decls)
       in tydef : constructors
     getnewdefns (Template tynms stuff) =
       map (Template tynms) $ getnewdefns stuff
+    getnewdefns (SpecificTemplate tynms stuff) =
+      map (SpecificTemplate tynms) $ getnewdefns stuff
     getnewdefns _ = []
 
 runPasses = validate . removeLambdas . typeArgs . typeGlobals . typeAliases . removeTemplates . removeData
 
 resolveImports' :: String -> [String] -> [Declaration] -> IO [Declaration]
 resolveImports' root already decls =
-  let importNames = ["std/prelude.hask"] ++ (catMaybes $ map getImport decls)
+  let importNames = catMaybes $ map getImport decls
       getImport (Import nm) = Just $ nm ++ ".hask"
       getImport _ = Nothing
       newImports = filter (\x -> not $ x `elem` already) importNames

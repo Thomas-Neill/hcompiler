@@ -1,0 +1,1 @@
+template <A> seq(x:A,y:A) -> A = y;

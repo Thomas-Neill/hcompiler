@@ -1,1 +1,9 @@
+import std/string;
+import std/util;
 extern putch: ((char) -> char);
+
+putstr(x:string) -> char =
+  case<string> {x} of {
+    empty:null = '!';
+    more:cons = seq<char>(putch(more.head),putstr(more.tail));
+  };

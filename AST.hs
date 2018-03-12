@@ -16,9 +16,10 @@ instance Eq Type where
   (Func tys1 ty1) == (Func tys2 ty2) = tys1 == tys2 && ty1 == ty2
   (Structure tys1) == (Structure tys2) = map snd tys1 == map snd tys2 --order must be preserved, but names can differ
   (Union tys1) == (Union tys2) = map snd tys1 == map snd tys2
-  (TypeVar _ nm1) == (TypeVar _ nm2) = nm1 == nm2
+  (TypeVar a nm1) == (TypeVar b nm2) = nm1 == nm2 || a == b
   ty1 == (TypeVar (Just ty2) _) = ty1 == ty2
   (TypeVar (Just ty1) _) == ty2 = ty1 == ty2
+  (TemplateType nm1 tys1) == (TemplateType nm2 tys2) = tys1 == tys2 && nm1 == nm2
   _ == _ = False
 
 instance Show Type where
@@ -29,7 +30,8 @@ instance Show Type where
   show (Func tys ret) = "((" ++ intercalate "," (map show tys) ++ ")->" ++ show ret ++ ")"
   show (Structure names) = "{" ++ intercalate "," (map (\(nm,ty) -> nm ++ ":" ++ show ty) names) ++ "}"
   show (Union names) =  "{" ++ intercalate "|" (map (\(nm,ty) -> nm ++ ":" ++ show ty) names) ++ "}"
-  show (TypeVar ty nm) = nm
+  show (TypeVar Nothing nm) = nm ++ "(undefined)"
+  show (TypeVar (Just _) nm) = nm
   show (TemplateType nm tys) = nm ++ "<" ++ intercalate "," (map show tys) ++ ">"
 
 mangle nm tys = nm ++ "__template__" ++ concat (map serializeType tys) ++ "__"
@@ -122,7 +124,7 @@ castable HChar HInt = True
 castable HInt HChar = True
 castable x y = x == y
 
-deAlias (TypeVar ty _) = fromJust ty
+deAlias (TypeVar ty _) = deAlias $ fromJust ty
 deAlias x = x
 
 typeOf :: Expr -> Type
@@ -232,6 +234,7 @@ data Declaration =
   --syntactical sugar below
   Data String [(String,Type)] |
   Template [String] Declaration |
+  SpecificTemplate [Type] Declaration |
   Import String deriving Eq
 
 instance Show Declaration where
@@ -246,6 +249,8 @@ instance Show Declaration where
       in "data " ++ nm ++ " = " ++ intercalate " | " (map show tys) ++ ";"
   show (Template vars st) =
     "template<" ++ intercalate "," vars ++ "> " ++ show st
+  show (SpecificTemplate vars st) =
+    "template<" ++ intercalate "," (map show vars) ++ "> " ++ show st
   show (Import s) = "import " ++ s ++ ";"
 
 typeofDecl :: Declaration -> Maybe (String,Type)

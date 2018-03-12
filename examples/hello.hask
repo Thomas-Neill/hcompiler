@@ -1,6 +1,3 @@
-template<A,B> seq(x:A,y:B) -> B = y;
-
-main() -> char =
-  let {
-    sq = seq<char,char>
-  } in { sq(putch('H'),sq(putch('e'),sq(putch('l'),sq(putch('l'),sq(putch('o'),sq(putch('!'),putch('\10')))))))};
+import std/io;
+import std/string;
+main() -> char = putstr(cons<char>('H',cons<char>('e',cons<char>('l',cons<char>('l',cons<char>('l',cons<char>('o',cons<char>('\10',null<char>()))))))));

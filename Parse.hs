@@ -124,6 +124,9 @@ decl = pad $ choice [
     Data <$>
       (try (string "data") *> spaces1 *> name) <*>
       (spaces *> char '=' *> spaces *> ((,) <$> name <*> (spaces1 *> typ)) `sepBy` (pad $ char '|')),
+    SpecificTemplate <$>
+      (try (string "specific" *> spaces1 *> string "template") *> spaces *> char '<' *> spaces *> typ `sepBy` (pad $ char ',') <* spaces <* char '>') <*>
+      (spaces *> decl),
     Template <$>
       (try (string "template") *> spaces *> char '<' *> spaces *> name `sepBy` (pad $ char ',') <* spaces <* char '>') <*>
       (spaces *> decl),
