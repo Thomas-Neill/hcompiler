@@ -1,9 +1,9 @@
 import std/string;
 import std/util;
-extern putch: ((char) -> char);
+extern putch: ((char) -> void);
 
-putstr(x:string) -> char =
+putstr(x:string) -> void =
   case<string> {x} of {
-    empty:null = '!';
-    more:cons = seq<char>(putch(more.head),putstr(more.tail));
+    empty:null = void;
+    more:cons = seq<void>(putch(more.head),putstr(more.tail));
   };

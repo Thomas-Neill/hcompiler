@@ -84,13 +84,13 @@ typeArgs decls = map typeArgs' decls
       FuncDef name types ret $ typeVars [types] expr
     typeArgs' (Extern nm ty) = Extern nm ty
 
-typeAliases decls = trace "hello" $ filter isnttypedef $ typeAliases' decls []
+typeAliases decls = filter isnttypedef $ typeAliases' decls []
   where
     isnttypedef (TypeDef _ _) = False
     isnttypedef _ = True
 
 typeAliases' decls lastneeded =
-    trace "before" $ if needed == [] then
+    if needed == [] then
       decls
     else if needed == lastneeded then
       error $ "Some or all of the following type vars are undeclared: " ++ intercalate " " needed
@@ -115,7 +115,7 @@ typeAliases' decls lastneeded =
       getTypeAliases (TypeDef nm ty) = Just (nm,ty)
       typetbl = (catMaybes $ map getTypeAliases decls)
       in
-        trace (show typetbl) $ case ty of
+        case ty of
           (TypeVar Nothing nm) -> TypeVar (fmap typeAlias (lookup nm typetbl)) nm
           x -> typeRecurse typeAlias x
     typeAliases'' (FuncDef name args ty ex) =
@@ -135,7 +135,7 @@ removeTemplates decls = filter isnttemplate $ removeTemplates' [] [] decls
 removeTemplates' already alreadytys decls =
   let next = newdefns ++ (map (rmtmptyvars . rmtmpvars) decls)
     in if newdefns == [] then next
-        else trace (show tyusetbl) $ removeTemplates' (usetbl ++ already) (tyusetbl ++ alreadytys) next
+        else removeTemplates' (usetbl ++ already) (tyusetbl ++ alreadytys) next
   where
     --stringify template vars
     rmtmpvars (FuncDef nm args ret ex) = FuncDef nm args ret $ rmtmpvarsE ex

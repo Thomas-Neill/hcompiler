@@ -18,6 +18,7 @@ exprCodegen (H.ILit i) = pointerize (pointerto i32) (constint i)
 exprCodegen (H.FLit f) = pointerize (pointerto float) (constf f)
 exprCodegen (H.BLit b) = pointerize (pointerto i1) (constb b)
 exprCodegen (H.CLit c) = pointerize (pointerto i8) (constc c)
+exprCodegen (H.VLit) = return $ ConstantOperand $ C.Null (pointerto i8)
 exprCodegen (H.Var _ v) = find v
 exprCodegen whole@(H.If c t e) = do
   let rt = H.typeOf whole --resulting type

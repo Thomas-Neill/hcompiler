@@ -4,7 +4,7 @@ import Util (commonArgs)
 import Data.List
 import Data.Char
 
-data Type = HInt | HFloat | HBool | HChar | Func [Type] Type |
+data Type = HInt | HFloat | HBool | HChar | HVoid | Func [Type] Type |
             Structure [(String,Type)] | Union [(String,Type)] | TypeVar (Maybe Type) String |
             TemplateType String [Type]
 
@@ -13,6 +13,7 @@ instance Eq Type where
   HFloat == HFloat = True
   HBool == HBool = True
   HChar == HChar = True
+  HVoid == HVoid = True
   (Func tys1 ty1) == (Func tys2 ty2) = tys1 == tys2 && ty1 == ty2
   (Structure tys1) == (Structure tys2) = map snd tys1 == map snd tys2 --order must be preserved, but names can differ
   (Union tys1) == (Union tys2) = map snd tys1 == map snd tys2
@@ -27,6 +28,7 @@ instance Show Type where
   show HFloat = "float"
   show HBool = "bool"
   show HChar = "char"
+  show HVoid = "void"
   show (Func tys ret) = "((" ++ intercalate "," (map show tys) ++ ")->" ++ show ret ++ ")"
   show (Structure names) = "{" ++ intercalate "," (map (\(nm,ty) -> nm ++ ":" ++ show ty) names) ++ "}"
   show (Union names) =  "{" ++ intercalate "|" (map (\(nm,ty) -> nm ++ ":" ++ show ty) names) ++ "}"
@@ -40,6 +42,7 @@ serializeType HInt = "int"
 serializeType HFloat = "float"
 serializeType HBool = "bool"
 serializeType HChar = "char"
+serializeType HVoid = "void"
 serializeType (Func tys ret) =
   "func__" ++ serializeType ret ++ "__" ++ intercalate "_" (map serializeType tys) ++ "__"
 serializeType (Structure names) =
@@ -53,6 +56,7 @@ data Expr = ILit Int |
             FLit Float |
             BLit Bool |
             CLit Char |
+            VLit |
             Binary BinOp Expr Expr |
             If Expr Expr Expr |
             Var (Maybe Type) String |
@@ -71,6 +75,7 @@ instance Show Expr where
   show (FLit f) = show f
   show (BLit b) = show b
   show (CLit c) = "'\\" ++ show (ord c) ++ "'"
+  show VLit = "void"
   show (Binary op l r) = show l ++ show op ++ show r
   show (If c l r) = "if {" ++ show c ++ "} then {" ++ show l ++ "} else {" ++ show r ++ "}"
   show (Var Nothing s) = s
@@ -132,6 +137,7 @@ typeOf (ILit _) = HInt
 typeOf (FLit _) = HFloat
 typeOf (BLit _) = HBool
 typeOf (CLit _) = HChar
+typeOf VLit = HVoid
 typeOf (Binary op l r) =
   let lt = typeOf l
       rt = typeOf r

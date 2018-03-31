@@ -9,6 +9,7 @@ passRecurseM p w@(ILit _) = return w
 passRecurseM p w@(FLit _) = return w
 passRecurseM p w@(BLit _) = return w
 passRecurseM p w@(CLit _) = return w
+passRecurseM p VLit = return VLit
 passRecurseM p (Binary op l r) = do
   l' <- p l
   r' <- p r
@@ -62,6 +63,7 @@ passAccumulateM p (ILit _) = return []
 passAccumulateM p (FLit _) = return []
 passAccumulateM p (BLit _) = return []
 passAccumulateM p (CLit _) = return []
+passAccumulateM p VLit = return []
 passAccumulateM p (Binary op l r) = do
   l' <- p l
   r' <- p r
@@ -109,6 +111,7 @@ typeRecurse p HInt = HInt
 typeRecurse p HFloat = HFloat
 typeRecurse p HBool = HBool
 typeRecurse p HChar = HChar
+typeRecurse p HVoid = HVoid
 typeRecurse p (Func tys ty) = Func (map p tys) (p ty)
 typeRecurse p (Structure tys) = Structure [(nm,p ty) | (nm,ty) <- tys]
 typeRecurse p (Union tys) = Union [(nm,p ty) | (nm,ty) <- tys]
@@ -120,6 +123,7 @@ typeAccumulate p HInt = []
 typeAccumulate p HFloat = []
 typeAccumulate p HBool = []
 typeAccumulate p HChar = []
+typeAccumulate p HVoid = []
 typeAccumulate p (Func tys ty) = p ty ++ concat (map p tys)
 typeAccumulate p (Structure tys) = concat (map (p . snd) tys)
 typeAccumulate p (Union tys) = concat (map (p . snd) tys)

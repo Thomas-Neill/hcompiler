@@ -262,6 +262,7 @@ htoll H.HBool = pointerto i1
 htoll H.HInt = pointerto i32
 htoll H.HFloat = pointerto float
 htoll H.HChar = pointerto i8
+htoll H.HVoid = pointerto i8
 htoll (H.Func args ret) = funcType
 htoll (H.Structure props) =
   pointerto $ StructureType False $ (map (htoll . snd) props)
@@ -274,6 +275,7 @@ htoc H.HInt = i32
 htoc H.HFloat = float
 htoc H.HBool = i8 --probably safe ...
 htoc H.HChar = i8
+htoc H.HVoid = pointerto i8
 htoc _ = error "Not defined"
 
 llvaltoc :: H.Type -> Operand -> Codegen Operand
@@ -283,6 +285,7 @@ llvaltoc H.HChar x = load x
 llvaltoc H.HBool val = do
   val' <- load val
   ins i8 $ ZExt val' i8 []
+llvaltoc H.HVoid val = return val
 llvaltoc _ _ = error "Undef"
 
 
@@ -315,6 +318,8 @@ cvaltoll H.HBool x = do
 
   useBlock done
   return re
+cvaltoll H.HVoid x = return x
+
 cfuncPtrType (H.Func args ret) = pointerto $ FunctionType (htoc ret) (map htoc args) False
 
 --instead of the function objects we pass around, this is the actual LLVM function pointer type
