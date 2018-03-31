@@ -54,6 +54,9 @@ passRecurseM p (Case ty ex css) = do
     e' <- p e
     return (nm,cs,e')
   return $ Case ty ex' css'
+passRecurseM p (Do exs) = do
+  exs' <- mapM p exs
+  return $ Do exs'
 
 passRecurse :: (Expr -> Expr) -> (Expr -> Expr)
 passRecurse p = runIdentity . passRecurseM (return . p)
@@ -102,6 +105,9 @@ passAccumulateM p (Case ty ex css) = do
   ex' <- p ex
   css' <- mapM (\(nm,cs,e) -> p e) css
   return $ ex' ++ concat css'
+passAccumulateM p (Do exs) = do
+  exs' <- mapM p exs
+  return $ concat exs'
 
 passAccumulate :: (Expr -> [a]) -> (Expr -> [a])
 passAccumulate p = runIdentity . passAccumulateM (return . p)

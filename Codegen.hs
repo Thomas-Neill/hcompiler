@@ -230,6 +230,13 @@ exprCodegen whole@(H.Case ty' ex cases) = do
   useBlock done
   phi (htoll $ H.typeOf whole) phis
 
+exprCodegen (H.Do (ex:exs)) = do
+  result <- exprCodegen ex
+  if exs == [] then
+    return result
+  else
+    exprCodegen (H.Do exs)
+
 declareGlobals :: [(String,H.Type)] -> LLVMM ()
 declareGlobals decls = do
   mapM_ defineGlobal

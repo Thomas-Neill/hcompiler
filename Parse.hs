@@ -45,11 +45,25 @@ typ = choice [
 
 listlit ty elems = foldr (\x acc -> Call (TemplateVar "cons" [ty]) [x,acc]) (Call (TemplateVar "null" [ty]) []) elems
 
+data DoStmt =
+  Normal Expr |
+  LetStmt String Expr deriving Eq
+
+mkdo [] = error "Must terminate do without special statement"
+mkdo ((Normal ex):xs) = if xs == [] then ex else Do [ex,mkdo xs]
+mkdo ((LetStmt nm ex):xs) = Let [(nm,ex)] (mkdo xs)
+
+parsedostmt = choice [
+    try $ LetStmt <$> (string "let" *> spaces1 *> name) <*> (spaces *> char '=' *> expr <* spaces <* char ';'),
+    Normal <$> (expr <* spaces <* char ';')
+  ]
+
 primary' = pad $ choice [
     boolit,
     try $ (string "void") *> pure VLit,
     try $ listlit <$> (string "list" *> spaces *> char '<' *> spaces *> typ <* spaces <* char '>') <*>
       (spaces *> char '(' *> spaces *> expr `sepBy` (pad $ char ',') <* spaces <* char ')'),
+    try $ mkdo <$> (string "do" *> spaces *> char '{' *> many1 (pad $ parsedostmt) <* char '}'),
     listlit HChar <$> (char '"' *> many (fmap CLit $ choice [stringChar,(chr . read) <$> (char '\\' *> many1 digit)]) <* char '"'),
     try $ TemplateVar <$> name <*> (spaces *> char '<' *> spaces *> typ `sepBy` (pad $ char ',') <* spaces <* char '>'),
     Var Nothing <$> name,

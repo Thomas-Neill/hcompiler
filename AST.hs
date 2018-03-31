@@ -68,7 +68,9 @@ data Expr = ILit Int |
             StructLiteral [(String,Expr)] |
             Cast Type Expr |
             Unionize Type String Expr |
-            Case Type Expr [(String,String,Expr)] deriving Eq
+            Case Type Expr [(String,String,Expr)] |
+            Do [Expr]
+            deriving Eq
 
 instance Show Expr where
   show (ILit x) = show x
@@ -89,6 +91,7 @@ instance Show Expr where
   show (Cast ty expr) = "cast<" ++ show ty ++ ">(" ++ show expr ++ ")"
   show (Unionize ty nm expr) = "unionize<" ++ show ty ++ ">(" ++ nm ++ "=" ++ show expr ++ ")"
   show (Case ty expr cases) = "case<"++show ty++"> {" ++ show expr ++ "} of {" ++ concat (map (\(nm,cs,ex) -> nm ++ ":" ++ cs ++ "=" ++ show ex ++ ";") cases) ++ "}"
+  show (Do actions) = "do {" ++ intercalate ";" (map show actions) ++ "}"
 
 data BinOp = Add | Sub | Mul | Div | Equal | Inequal | Greater | Less | GrEqual | LEqual | And | Or deriving Eq
 
@@ -231,7 +234,8 @@ typeOf (Case ty ex cases) =
         let (_,_,first) = cases !! 0
         in (foldl (\acc x -> if acc /= x then error "Different types in case branch" else acc) (typeOf first) [typeOf lst | (_,_,lst) <- cases])
     bad -> error $ "Expected union for case but got type " ++ show bad
-
+typeOf (Do exs) =
+  (foldl1 seq $ map typeOf exs) `seq` (typeOf $ last exs)
 
 data Declaration =
   FuncDef String [(String,Type)] Type Expr |

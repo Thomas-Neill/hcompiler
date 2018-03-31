@@ -1,0 +1,6 @@
+import std/prelude;
+main() -> void = do {
+    putstr("Hello, world!");
+    let X = 10;
+    putch(cast<char>(X));
+  };
